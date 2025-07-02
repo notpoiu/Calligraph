@@ -33,3 +33,7 @@ print("Closing Calligraph session.")
 Session:Close()
 Session:SaveToFile(LogFile)
 ```
+
+# Compilation with DarkLua
+
+- Run compile.bat and check compiled folder
