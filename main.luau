@@ -67,7 +67,7 @@ local MAX_BUFFER_SIZE = 1024 * 1024 * 1024 -- 1 GiB
 --#region Module
 
 local Calligraph = {
-	Version = "1.3.1",
+	Version = "1.3.2",
 }
 
 -- Log Constructors for the JSON format
