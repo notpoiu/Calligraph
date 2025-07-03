@@ -6,7 +6,7 @@ It is still in very early development, expect many breaking changes and bugs, op
 # Usage
 
 ```lua
-local Calligraph = loadstring(game:HttpGet("https://raw.githubusercontent.com/centerepic/Calligraph/refs/heads/main/compiled/Calligraph.luau"))()
+local CalligraphModule = loadstring(game:HttpGet("https://raw.githubusercontent.com/centerepic/Calligraph/refs/heads/main/compiled/Calligraph.luau"))()
 local Target = `Players.{game.Players.LocalPlayer.Name}.PlayerScripts.RbxCharacterSounds`
 local LogFile = "Calligraph_Demo.txt"
 
