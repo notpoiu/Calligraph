@@ -406,11 +406,13 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 	if Session.Configuration.LogEnvironment and getrenv then
 		for FunctionName, Function in pairs(getrenv()) do
 			if type(Function) == "function" and type(FunctionName) == "string" and FunctionName ~= "" then
-				HookMgr.RegisterHook(
-					`Calligraph:{Session.GUID}:FunctionCall:` .. FunctionName,
-					Function,
-					Calligraph.NewFunctionProxy(Session, LogFormatter, Function)
-				)
+				if not Blacklist[FunctionName] then
+					HookMgr.RegisterHook(
+						`Calligraph:{Session.GUID}:FunctionCall:` .. FunctionName,
+						Function,
+						Calligraph.NewFunctionProxy(Session, LogFormatter, Function)
+					)
+				end
 			end
 		end
 	end
