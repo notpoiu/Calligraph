@@ -198,48 +198,27 @@ end
 
 -- i hate this
 function Calligraph.NewFunctionProxy(Session: Session, Formatter: LogConstructorSet, Function: (...any?) -> ...any?)
-	local Wrapped = iscclosure(Function)
-	return Wrapped
-			and newcclosure(function(...)
-				if checkcaller() then
-					return Function(...)
-				end
-				local CallSource = debug.info(4, "s")
-				if not table.find(Session.Targets, CallSource) then
-					return Function(...)
-				end
-				local Args = { ... }
-				local Success, Return, ArgsN = Utils.GetReturnData(Function, ...)
-				local ReturnFormatted = Success and Return or { ["error"] = Return[1] }
-				task.spawn(function()
-					Session.Log(Formatter.FunctionCall(Function, Args, ReturnFormatted))
-				end)
-				if Success then
-					return table.unpack(Return, 1, ArgsN)
-				else
-					return error(Return[1])
-				end
-			end)
-		or function(...)
-			if checkcaller() then
-				return Function(...)
-			end
-			local CallSource = debug.info(4, "s")
-			if not table.find(Session.Targets, CallSource) then
-				return Function(...)
-			end
-			local Args = { ... }
-			local Success, Return, ArgsN = Utils.GetReturnData(Function, ...)
-			local ReturnFormatted = Success and Return or { ["error"] = Return[1] }
-			task.spawn(function()
-				Session.Log(Formatter.FunctionCall(Function, Args, ReturnFormatted))
-			end)
-			if Success then
-				return table.unpack(Return, 1, ArgsN)
-			else
-				return error(Return[1])
-			end
+	return function(Old, ...)
+		if checkcaller() then
+			return Old(...)
 		end
+		local CallSource = debug.info(4, "s")
+		print('log', Old, ...)
+		if not table.find(Session.Targets, CallSource) then
+			return Old(...)
+		end
+		local Args = { ... }
+		local Success, Return, ArgsN = Utils.GetReturnData(Old, ...)
+		local ReturnFormatted = Success and Return or { ["error"] = Return[1] }
+		task.spawn(function()
+			Session.Log(Formatter.FunctionCall(Old, Args, ReturnFormatted))
+		end)
+		if Success then
+			return table.unpack(Return, 1, ArgsN)
+		else
+			return error(Return[1])
+		end
+	end
 end
 
 function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfiguration)
@@ -400,6 +379,15 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 
 	local Whitelist = {
 		["require"] = true,
+		["tick"] = true,
+		["wait"] = true,
+		["spawn"] = true,
+		["tostring"] = true,
+		["tonumber"] = true,
+		["typeof"] = true,
+		-- ["pairs"] = true,
+		-- ["ipairs"] = true,
+		-- ["next"] = true,
 	}
 
 	if Session.Configuration.LogEnvironment and getrenv then

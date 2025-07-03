@@ -739,7 +739,7 @@ local JSONEncode = function(...): string
 end
 local MAX_BUFFER_SIZE = 1024 * 1024 * 1024
 local Calligraph = {
-    Version = '1.3.1',
+    Version = '1.3.2',
 }
 local JSONLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return)
@@ -869,53 +869,27 @@ function Calligraph.NewFunctionProxy(
     Formatter: LogConstructorSet,
     Function: (...any?) -> ...any?
 )
-    local Wrapped = iscclosure(Function)
-
-    return Wrapped and newcclosure(function(...)
+    return function(Old, ...)
         if checkcaller() then
-            return Function(...)
+            return Old(...)
         end
 
         local CallSource = debug.info(4, 's')
 
+        print('log', Old, ...)
+
         if not table.find(Session.Targets, CallSource) then
-            return Function(...)
+            return Old(...)
         end
 
         local Args = {...}
-        local Success, Return, ArgsN = Utils.GetReturnData(Function, ...)
+        local Success, Return, ArgsN = Utils.GetReturnData(Old, ...)
         local ReturnFormatted = Success and Return or {
             ['error'] = Return[1],
         }
 
         task.spawn(function()
-            Session.Log(Formatter.FunctionCall(Function, Args, ReturnFormatted))
-        end)
-
-        if Success then
-            return table.unpack(Return, 1, ArgsN)
-        else
-            return error(Return[1])
-        end
-    end) or function(...)
-        if checkcaller() then
-            return Function(...)
-        end
-
-        local CallSource = debug.info(4, 's')
-
-        if not table.find(Session.Targets, CallSource) then
-            return Function(...)
-        end
-
-        local Args = {...}
-        local Success, Return, ArgsN = Utils.GetReturnData(Function, ...)
-        local ReturnFormatted = Success and Return or {
-            ['error'] = Return[1],
-        }
-
-        task.spawn(function()
-            Session.Log(Formatter.FunctionCall(Function, Args, ReturnFormatted))
+            Session.Log(Formatter.FunctionCall(Old, Args, ReturnFormatted))
         end)
 
         if Success then
@@ -1103,15 +1077,22 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
         end)
     end
 
-    local Blacklist = {
-        ['rawget'] = true,
-        ['rawset'] = true,
+    local Whitelist = {
+        ['require'] = true,
+        ['tick'] = true,
+        ['wait'] = true,
+        ['spawn'] = true,
+        ['tostring'] = true,
+        ['tonumber'] = true,
+        ['typeof'] = true,
     }
 
     if Session.Configuration.LogEnvironment and getrenv then
         for FunctionName, Function in pairs(getrenv())do
             if type(Function) == 'function' and type(FunctionName) == 'string' and FunctionName ~= '' then
-                HookMgr.RegisterHook(`Calligraph:{Session.GUID}:FunctionCall:` .. FunctionName, Function, Calligraph.NewFunctionProxy(Session, LogFormatter, Function))
+                if Whitelist[FunctionName] then
+                    HookMgr.RegisterHook(`Calligraph:{Session.GUID}:FunctionCall:` .. FunctionName, Function, Calligraph.NewFunctionProxy(Session, LogFormatter, Function))
+                end
             end
         end
     end
