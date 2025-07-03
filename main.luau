@@ -398,6 +398,11 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 		)
 	end
 
+	local Blacklist = {
+		["rawget"] = true,
+		["rawset"] = true,
+	}
+
 	if Session.Configuration.LogEnvironment and getrenv then
 		for FunctionName, Function in pairs(getrenv()) do
 			if type(Function) == "function" and type(FunctionName) == "string" and FunctionName ~= "" then

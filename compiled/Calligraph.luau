@@ -781,30 +781,30 @@ local JSONLogConstructors: LogConstructorSet = {
     end,
 }
 
-local function formatCodeArgs(args: {any?}): string
-    local oldthreadcontext = getthreadcontext and getthreadcontext() or 1
+local function FormatCodeArgs(Args: {any?}): string
+    local OldThreadContext = getthreadcontext and getthreadcontext() or 1
 
     setthreadcontext(7)
 
-    if #args > 0 and type(args[#args]) == 'number' then
-        table.remove(args, #args)
+    if #Args > 0 and type(Args[#Args]) == 'number' then
+        table.remove(Args, #Args)
     end
 
-    local encoded = LuaEncode(args)
+    local Encoded = LuaEncode(Args)
 
-    setthreadcontext(oldthreadcontext)
+    setthreadcontext(OldThreadContext)
 
-    return string.sub(encoded, 2, -2)
+    return string.sub(Encoded, 2, -2)
 end
-local function formatInstancePath(Instance: Instance): string
+local function FormatInstancePath(Instance: Instance): string
     if not Instance then
         return 'nil'
     end
 
-    local path = Instance:GetFullName()
+    local Path = Instance:GetFullName()
 
-    if path == '' then
-        return `nil...{Instance.Name}` or '__UnnamedInstance__'
+    if Path == '' then
+        return `nil...{Instance.Name}`
     end
 
     return EvaluateInstancePath(Instance)
@@ -812,26 +812,26 @@ end
 
 local CodeLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return)
-        local funcName = debug.info(Function, 'n') or 'anonymous_function'
+        local FunctionName = debug.info(Function, 'n') or 'anonymous_function'
 
-        return string.format('%s(%s) --> %s', funcName, formatCodeArgs(Args), LuaEncode(Return))
+        return string.format('%s(%s) --> %s', FunctionName, FormatCodeArgs(Args), LuaEncode(Return))
     end,
     Namecall = function(Instance, Method, Args, Return)
-        local callArgs = {}
+        local CallArgs = {}
 
         for i, v in ipairs(Args)do
             if i > 1 then
-                table.insert(callArgs, v)
+                table.insert(CallArgs, v)
             end
         end
 
-        return string.format('%s:%s(%s) --> %s', formatInstancePath(Instance), Method, formatCodeArgs(callArgs), LuaEncode(Return))
+        return string.format('%s:%s(%s) --> %s', FormatInstancePath(Instance), Method, FormatCodeArgs(CallArgs), LuaEncode(Return))
     end,
     Index = function(Instance, Key, Return)
-        return string.format('%s.%s --> %s', formatInstancePath(Instance), Key, LuaEncode(Return))
+        return string.format('%s.%s --> %s', FormatInstancePath(Instance), Key, LuaEncode(Return))
     end,
     NewIndex = function(Instance, Key, Value)
-        return string.format('%s.%s = %s', formatInstancePath(Instance), Key, LuaEncode({Value}))
+        return string.format('%s.%s = %s', FormatInstancePath(Instance), Key, LuaEncode({Value}))
     end,
 }
 
@@ -959,12 +959,12 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
             local FormattedLog = string.format(`[%s] %s\n`, os.date('%Y-%m-%d %H:%M:%S'), LogString)
 
             if Session.Written + #FormattedLog > MAX_BUFFER_SIZE then
-                local finalMsg = '[SYSTEM] Buffer full. Further logs will be ignored.\n'
+                local FinalMsg = '[SYSTEM] Buffer full. Further logs will be ignored.\n'
 
-                if Session.Written + #finalMsg <= MAX_BUFFER_SIZE then
-                    buffer.writestring(Session.Data, Session.Written, finalMsg)
+                if Session.Written + #FinalMsg <= MAX_BUFFER_SIZE then
+                    buffer.writestring(Session.Data, Session.Written, FinalMsg)
 
-                    Session.Written += #finalMsg
+                    Session.Written += #FinalMsg
                 end
 
                 Session.Active = false
@@ -986,26 +986,26 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
                 return
             end
 
-            local success, err: any = pcall(function()
+            local Success, Error: any = pcall(function()
                 writefile(FileName, '')
 
-                local totalSize = self.Written
+                local TotalSize = self.Written
 
-                if totalSize == 0 then
+                if TotalSize == 0 then
                     return
                 end
 
-                local chunkSize = math.max(1, math.floor(totalSize / 10))
+                local ChunkSize = math.max(1, math.floor(TotalSize / 10))
 
-                for offset = 0, totalSize - 1, chunkSize do
-                    local currentChunkSize = math.min(chunkSize, totalSize - offset)
+                for Offset = 0, TotalSize - 1, ChunkSize do
+                    local CurrentChunkSize = math.min(ChunkSize, TotalSize - Offset)
 
-                    appendfile(FileName, buffer.readstring(self.Data, offset, currentChunkSize))
+                    appendfile(FileName, buffer.readstring(self.Data, Offset, CurrentChunkSize))
                 end
             end)
 
-            if not success then
-                warn('Calligraph: Failed to save log to file. Error:', tostring(err))
+            if not Success then
+                warn('Calligraph: Failed to save log to file. Error:', tostring(Error))
             else
                 print('Calligraph: Successfully saved', self.Written, 'bytes to', FileName)
             end
@@ -1102,6 +1102,12 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
             return table.unpack(Return)
         end)
     end
+
+    local Blacklist = {
+        ['rawget'] = true,
+        ['rawset'] = true,
+    }
+
     if Session.Configuration.LogEnvironment and getrenv then
         for FunctionName, Function in pairs(getrenv())do
             if type(Function) == 'function' and type(FunctionName) == 'string' and FunctionName ~= '' then
