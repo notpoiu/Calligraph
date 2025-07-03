@@ -711,8 +711,13 @@ do
 
         function Utils.GetReturnData(Function: (...any?) -> (...any?), ...)
             local Results = table.pack(pcall(Function, ...))
+            local ArgsN = Results.n - 1
 
-            return table.remove(Results, 1), Results, Results.n - 1
+            if Results.n then
+                Results.n = nil
+            end
+
+            return table.remove(Results, 1), Results, ArgsN
         end
 
         return Utils
@@ -722,7 +727,7 @@ end
 shared.DirectCall = {}
 
 type SessionConfiguration = {LogEnvironment: boolean, LogMetamethods: boolean, LogAsCode: boolean?, LuraphCompatibility: boolean?, FilterInstanceIndex: boolean?}
-type LogConstructorSet = {FunctionCall: (Function:(...any?) -> ...any?, Args:{any?}, Return:{any?}) -> string, Namecall: (Instance:Instance, Method:string, Args:{any?}, Return:{any?}) -> string, Index: (Instance:Instance, Key:string, Return:{any?}) -> string, NewIndex: (Instance:Instance, Key:string, Value:any) -> string}
+type LogConstructorSet = {FunctionCall: (Function:(...any?) -> ...any?, Args:{any?}, Return:{any?}, FunctionPath:string?) -> string, Namecall: (Instance:Instance, Method:string, Args:{any?}, Return:{any?}) -> string, Index: (Instance:Instance, Key:string, Return:{any?}) -> string, NewIndex: (Instance:Instance, Key:string, Value:any) -> string}
 type Session = {Configuration: SessionConfiguration, Targets: {string}, Data: buffer, Written: number, Start: number, End: number, Close: () -> (), GUID: string, Log: (LogString:string) -> (), Active: boolean, SaveToFile: (self:Session, FileName:string) -> ()}
 
 local HttpService = game:GetService('HttpService')
@@ -742,11 +747,11 @@ local Calligraph = {
     Version = '1.3.2',
 }
 local JSONLogConstructors: LogConstructorSet = {
-    FunctionCall = function(Function, Args, Return)
+    FunctionCall = function(Function, Args, Return, FunctionPath)
         return JSONEncode({
             Time = os.clock(),
             Type = 'FunctionCall',
-            Name = debug.info(Function, 'n') or tostring(Function),
+            Name = FunctionPath or debug.info(Function, 'n') or tostring(Function),
             Args = LuaEncode(Args),
             Return = LuaEncode(Return),
         })
@@ -786,10 +791,6 @@ local function FormatCodeArgs(Args: {any?}): string
 
     setthreadcontext(7)
 
-    if #Args > 0 and type(Args[#Args]) == 'number' then
-        table.remove(Args, #Args)
-    end
-
     local Encoded = LuaEncode(Args)
 
     setthreadcontext(OldThreadContext)
@@ -811,8 +812,8 @@ local function FormatInstancePath(Instance: Instance): string
 end
 
 local CodeLogConstructors: LogConstructorSet = {
-    FunctionCall = function(Function, Args, Return)
-        local FunctionName = debug.info(Function, 'n') or 'anonymous_function'
+    FunctionCall = function(Function, Args, Return, FunctionPath)
+        local FunctionName = FunctionPath or debug.info(Function, 'n') or 'anonymous_function'
 
         return string.format('%s(%s) --> %s', FunctionName, FormatCodeArgs(Args), LuaEncode(Return))
     end,
@@ -867,7 +868,8 @@ end
 function Calligraph.NewFunctionProxy(
     Session: Session,
     Formatter: LogConstructorSet,
-    Function: (...any?) -> ...any?
+    Function: (...any?) -> ...any?,
+    FunctionPath: string?
 )
     return function(Old, ...)
         if checkcaller() then
@@ -875,8 +877,6 @@ function Calligraph.NewFunctionProxy(
         end
 
         local CallSource = debug.info(4, 's')
-
-        print('log', Old, ...)
 
         if not table.find(Session.Targets, CallSource) then
             return Old(...)
@@ -889,7 +889,7 @@ function Calligraph.NewFunctionProxy(
         }
 
         task.spawn(function()
-            Session.Log(Formatter.FunctionCall(Old, Args, ReturnFormatted))
+            Session.Log(Formatter.FunctionCall(Old, Args, ReturnFormatted, FunctionPath))
         end)
 
         if Success then
@@ -1076,25 +1076,56 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
             return table.unpack(Return)
         end)
     end
-
-    local Whitelist = {
-        ['require'] = true,
-        ['tick'] = true,
-        ['wait'] = true,
-        ['spawn'] = true,
-        ['tostring'] = true,
-        ['tonumber'] = true,
-        ['typeof'] = true,
-    }
-
     if Session.Configuration.LogEnvironment and getrenv then
-        for FunctionName, Function in pairs(getrenv())do
-            if type(Function) == 'function' and type(FunctionName) == 'string' and FunctionName ~= '' then
-                if Whitelist[FunctionName] then
-                    HookMgr.RegisterHook(`Calligraph:{Session.GUID}:FunctionCall:` .. FunctionName, Function, Calligraph.NewFunctionProxy(Session, LogFormatter, Function))
+        local Whitelist = {
+            ['require'] = true,
+            ['tostring'] = true,
+            ['tonumber'] = true,
+            ['typeof'] = true,
+            ['tick'] = true,
+            ['t_Random'] = true,
+            ['t_os'] = true,
+            ['t_math'] = true,
+            ['t_task'] = true,
+        }
+        local Blacklist = {
+            ['t_task.wait'] = true,
+        }
+
+        local function HookTableFunctions(
+            TargetTable: {[string]: any},
+            PathPrefix: string
+        )
+            for Name, Value in pairs(TargetTable)do
+                if type(Value) == 'function' then
+                    local FullPath = if PathPrefix ~= ''then PathPrefix .. '.' .. Name else Name
+
+                    if Blacklist['t_' .. FullPath] then
+                        continue
+                    end
+
+                    HookMgr.RegisterHook(`Calligraph:{Session.GUID}:FunctionCall:` .. FullPath, Value, Calligraph.NewFunctionProxy(Session, LogFormatter, Value, FullPath))
                 end
             end
         end
+        local function ScanAndHookWhitelisted(TargetTable: {[string]: any})
+            for Name, Value in pairs(TargetTable)do
+                if type(Name) ~= 'string' then
+                    continue
+                end
+                if Whitelist[Name] and type(Value) == 'function' then
+                    if Blacklist[Name] then
+                        continue
+                    end
+
+                    HookMgr.RegisterHook(`Calligraph:{Session.GUID}:FunctionCall:` .. Name, Value, Calligraph.NewFunctionProxy(Session, LogFormatter, Value, Name))
+                elseif Whitelist['t_' .. Name] and type(Value) == 'table' then
+                    HookTableFunctions(Value, Name)
+                end
+            end
+        end
+
+        ScanAndHookWhitelisted(getrenv())
     end
 
     return Session

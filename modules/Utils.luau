@@ -11,7 +11,14 @@ local Utils = {}
 ]]
 function Utils.GetReturnData(Function : (...any?) -> (...any?), ...)
     local Results = table.pack(pcall(Function, ...))
-    return table.remove(Results, 1), Results, Results.n - 1
+    local ArgsN = Results.n - 1
+    
+    -- Remove Args.n now
+    if Results.n then
+        Results.n = nil
+    end
+
+    return table.remove(Results, 1), Results, ArgsN
 end
 
 return Utils

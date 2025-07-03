@@ -19,7 +19,7 @@ type SessionConfiguration = {
 
 -- This new type defines the required shape for any log constructor table.
 type LogConstructorSet = {
-	FunctionCall: (Function: (...any?) -> ...any?, Args: { any? }, Return: { any? }) -> string,
+	FunctionCall: (Function: (...any?) -> ...any?, Args: { any? }, Return: { any? }, FunctionPath: string?) -> string,
 	Namecall: (Instance: Instance, Method: string, Args: { any? }, Return: { any? }) -> string,
 	Index: (Instance: Instance, Key: string, Return: { any? }) -> string,
 	NewIndex: (Instance: Instance, Key: string, Value: any) -> string,
@@ -72,11 +72,11 @@ local Calligraph = {
 
 -- Log Constructors for the JSON format
 local JSONLogConstructors: LogConstructorSet = {
-	FunctionCall = function(Function, Args, Return)
+	FunctionCall = function(Function, Args, Return, FunctionPath)
 		return JSONEncode({
 			Time = os.clock(),
 			Type = "FunctionCall",
-			Name = debug.info(Function, "n") or tostring(Function),
+			Name = FunctionPath or debug.info(Function, "n") or tostring(Function),
 			Args = LuaEncode(Args),
 			Return = LuaEncode(Return),
 		})
@@ -115,10 +115,6 @@ local function FormatCodeArgs(Args: { any? }): string
 	local OldThreadContext = getthreadcontext and getthreadcontext() or 1
 	setthreadcontext(7)
 
-	if #Args > 0 and type(Args[#Args]) == "number" then
-		table.remove(Args, #Args)
-	end
-
 	local Encoded = LuaEncode(Args)
 
 	setthreadcontext(OldThreadContext)
@@ -142,8 +138,8 @@ local function FormatInstancePath(Instance: Instance): string
 end
 
 local CodeLogConstructors: LogConstructorSet = {
-	FunctionCall = function(Function, Args, Return)
-		local FunctionName = debug.info(Function, "n") or "anonymous_function"
+	FunctionCall = function(Function, Args, Return, FunctionPath)
+		local FunctionName = FunctionPath or debug.info(Function, "n") or "anonymous_function"
 		return string.format("%s(%s) --> %s", FunctionName, FormatCodeArgs(Args), LuaEncode(Return))
 	end,
 	Namecall = function(Instance, Method, Args, Return)
@@ -197,13 +193,18 @@ function Calligraph.NewMethodProxy(
 end
 
 -- i hate this
-function Calligraph.NewFunctionProxy(Session: Session, Formatter: LogConstructorSet, Function: (...any?) -> ...any?)
+function Calligraph.NewFunctionProxy(
+	Session: Session,
+	Formatter: LogConstructorSet,
+	Function: (...any?) -> ...any?,
+	FunctionPath: string?
+)
 	return function(Old, ...)
 		if checkcaller() then
 			return Old(...)
 		end
 		local CallSource = debug.info(4, "s")
-		print('log', Old, ...)
+		-- print('log', Old, ...)
 		if not table.find(Session.Targets, CallSource) then
 			return Old(...)
 		end
@@ -211,7 +212,7 @@ function Calligraph.NewFunctionProxy(Session: Session, Formatter: LogConstructor
 		local Success, Return, ArgsN = Utils.GetReturnData(Old, ...)
 		local ReturnFormatted = Success and Return or { ["error"] = Return[1] }
 		task.spawn(function()
-			Session.Log(Formatter.FunctionCall(Old, Args, ReturnFormatted))
+			Session.Log(Formatter.FunctionCall(Old, Args, ReturnFormatted, FunctionPath))
 		end)
 		if Success then
 			return table.unpack(Return, 1, ArgsN)
@@ -377,31 +378,73 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 		)
 	end
 
-	local Whitelist = {
-		["require"] = true,
-		["tick"] = true,
-		["wait"] = true,
-		["spawn"] = true,
-		["tostring"] = true,
-		["tonumber"] = true,
-		["typeof"] = true,
-		-- ["pairs"] = true,
-		-- ["ipairs"] = true,
-		-- ["next"] = true,
-	}
-
 	if Session.Configuration.LogEnvironment and getrenv then
-		for FunctionName, Function in pairs(getrenv()) do
-			if type(Function) == "function" and type(FunctionName) == "string" and FunctionName ~= "" then
-				if Whitelist[FunctionName] then
+		local Whitelist = {
+			["require"] = true,
+			-- ["print"] = true,
+			-- ["warn"] = true,
+			-- ["error"] = true,
+			["tostring"] = true,
+			["tonumber"] = true,
+			["typeof"] = true,
+			["tick"] = true,
+			-- Tables prefixed with t_ will have all their functions hooked
+			-- ["t_CFrame"] = true,
+			-- ["t_Vector3"] = true,
+			-- ["t_Vector2"] = true,
+			["t_Random"] = true,
+			["t_os"] = true,
+			["t_math"] = true,
+			-- ["t_bit32"] = true, -- Luraph spams this with garbage
+			-- ["t_table"] = true,
+			-- ["t_coroutine"] = true,
+			["t_task"] = true,
+		}
+
+		local Blacklist = {
+			["t_task.wait"] = true, -- spammy and useless
+		}
+
+		local function HookTableFunctions(TargetTable: { [string]: any }, PathPrefix: string)
+			for Name, Value in pairs(TargetTable) do
+				if type(Value) == "function" then
+					local FullPath = if PathPrefix ~= "" then PathPrefix .. "." .. Name else Name
+					if Blacklist["t_" .. FullPath] then
+						continue
+					end
 					HookMgr.RegisterHook(
-						`Calligraph:{Session.GUID}:FunctionCall:` .. FunctionName,
-						Function,
-						Calligraph.NewFunctionProxy(Session, LogFormatter, Function)
+						`Calligraph:{Session.GUID}:FunctionCall:` .. FullPath,
+						Value,
+						Calligraph.NewFunctionProxy(Session, LogFormatter, Value, FullPath)
 					)
 				end
 			end
 		end
+
+		local function ScanAndHookWhitelisted(TargetTable: { [string]: any })
+			for Name, Value in pairs(TargetTable) do
+				if type(Name) ~= "string" then
+					continue -- Skip non-string keys
+				end
+
+				if Whitelist[Name] and type(Value) == "function" then
+					if Blacklist[Name] then
+						continue
+					end
+					-- Direct function in whitelist (e.g., print)
+					HookMgr.RegisterHook(
+						`Calligraph:{Session.GUID}:FunctionCall:` .. Name,
+						Value,
+						Calligraph.NewFunctionProxy(Session, LogFormatter, Value, Name)
+					)
+				elseif Whitelist["t_" .. Name] and type(Value) == "table" then
+					-- Table in whitelist (e.g., t_math for math table)
+					HookTableFunctions(Value, Name)
+				end
+			end
+		end
+
+		ScanAndHookWhitelisted(getrenv())
 	end
 
 	return Session
