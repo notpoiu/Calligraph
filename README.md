@@ -2,6 +2,7 @@
 
 Calligraph is a library used for performing dynamic analysis on obfuscated Luau scripts in the Roblox engine.
 It is still in very early development, expect many breaking changes and bugs, open to PRs.
+This is currently very detectable by anti-cheats. Use with caution.
 
 # Usage
 
