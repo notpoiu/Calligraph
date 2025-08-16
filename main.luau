@@ -147,9 +147,9 @@ local CodeLogConstructors: LogConstructorSet = {
 		local CallArgs = {}
 
 		for i, v in ipairs(Args) do -- ipairs to filter out the n=... value
-			if i > 1 then -- skip self as it's already inferred to be a namecall
-				table.insert(CallArgs, v)
-			end
+			-- if i > 1 then -- skip self as it's already inferred to be a namecall
+			table.insert(CallArgs, v)
+			-- end
 		end
 
 		return string.format(
