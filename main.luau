@@ -12,7 +12,7 @@ shared.DirectCall = {}
 type SessionConfiguration = {
 	LogEnvironment: boolean, -- Hook all functions in standard script Environment?
 	LogMetamethods: boolean, -- Hook metamethods?
-	LogAsCode: boolean?, -- Log as executable Luau code instead of JSON? (Defaults to false)
+	LogAsCode: boolean?, -- Log as executable Luau code instead of JSON? (Defaults to true)
 	LuraphCompatibility: boolean?, -- Enable Luraph compatibility mode? (Defaults to false)
 	FilterInstanceIndex: boolean?, -- Filter out instance index calls? (Defaults to false)
 }
