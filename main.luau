@@ -7,36 +7,41 @@
 
 shared.DirectCall = {}
 
+--#region Definitions
+
+local MAX_BUFFER_SIZE = 1024 * 1024 * 1024 -- 1 GiB
+
+--#endregion
+
 --#region Types
 
 type SessionConfiguration = {
-	LogEnvironment: boolean, -- Hook all functions in standard script Environment?
-	LogMetamethods: boolean, -- Hook metamethods?
-	LogAsCode: boolean?, -- Log as executable Luau code instead of JSON? (Defaults to true)
-	LuraphCompatibility: boolean?, -- Enable Luraph compatibility mode? (Defaults to false)
-	FilterInstanceIndex: boolean?, -- Filter out instance index calls? (Defaults to false)
+	LogEnvironment         : boolean,  -- Hook all functions in standard script Environment?
+	LogMetamethods         : boolean,  -- Hook metamethods?
+	LogAsCode              : boolean?, -- Log as executable Luau code instead of JSON? (Defaults to true)
+	LuraphCompatibility    : boolean?, -- Enable Luraph compatibility mode? (Defaults to false)
+	FilterInstanceIndex    : boolean?, -- Filter out instance index calls? (Defaults to false)
 }
 
--- This new type defines the required shape for any log constructor table.
 type LogConstructorSet = {
-	FunctionCall: (Function: (...any?) -> ...any?, Args: { any? }, Return: { any? }, FunctionPath: string?) -> string,
-	Namecall: (Instance: Instance, Method: string, Args: { any? }, Return: { any? }) -> string,
-	Index: (Instance: Instance, Key: string, Return: { any? }) -> string,
-	NewIndex: (Instance: Instance, Key: string, Value: any) -> string,
+	FunctionCall           : (Function: (...any?) -> ...any?, Args: { any? }, Return: { any? }, FunctionPath: string?) -> string,
+	Namecall               : (Instance: Instance, Method: string, Args: { any? }, Return: { any? }) -> string,
+	Index                  : (Instance: Instance, Key: string, Return: { any? }) -> string,
+	NewIndex               : (Instance: Instance, Key: string, Value: any) -> string,
 }
 
 type Session = {
-	Configuration: SessionConfiguration,
-	Targets: { string },
-	Data: buffer,
-	Written: number,
-	Start: number,
-	End: number,
-	Close: () -> (),
-	GUID: string,
-	Log: (LogString: string) -> (),
-	Active: boolean,
-	SaveToFile: (self: Session, FileName: string) -> (),
+	Configuration          : SessionConfiguration,
+	Targets                : { string },
+	Data                   : buffer,
+	Written                : number,
+	Start                  : number,
+	End                    : number,
+	Close                  : () -> (),
+	GUID                   : string,
+	Log                    : (LogString: string) -> (),
+	Active                 : boolean,
+	SaveToFile             : (self: Session, FileName: string) -> (),
 }
 
 --#endregion
@@ -58,10 +63,6 @@ local JSONEncode = function(...): string
 	end
 end
 
---#endregion
-
---#region Definitions
-local MAX_BUFFER_SIZE = 1024 * 1024 * 1024 -- 1 GiB
 --#endregion
 
 --#region Module
@@ -203,17 +204,22 @@ function Calligraph.NewFunctionProxy(
 		if checkcaller() then
 			return Old(...)
 		end
+
 		local CallSource = debug.info(4, "s")
 		-- print('log', Old, ...)
+
 		if not table.find(Session.Targets, CallSource) then
 			return Old(...)
 		end
+
 		local Args = { ... }
 		local Success, Return, ArgsN = Utils.GetReturnData(Old, ...)
 		local ReturnFormatted = Success and Return or { ["error"] = Return[1] }
+
 		task.spawn(function()
 			Session.Log(Formatter.FunctionCall(Old, Args, ReturnFormatted, FunctionPath))
 		end)
+
 		if Success then
 			return table.unpack(Return, 1, ArgsN)
 		else
