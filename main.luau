@@ -390,7 +390,7 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 			-- ["print"] = true,
 			-- ["warn"] = true,
 			-- ["error"] = true,
-			["tostring"] = true,
+			["tostring"] = true, -- Luraph spams this but is useful sometimes
 			["tonumber"] = true,
 			["typeof"] = true,
 			["tick"] = true,
