@@ -726,6 +726,8 @@ end
 
 shared.DirectCall = {}
 
+local MAX_BUFFER_SIZE = 1024 * 1024 * 1024
+
 type SessionConfiguration = {LogEnvironment: boolean, LogMetamethods: boolean, LogAsCode: boolean?, LuraphCompatibility: boolean?, FilterInstanceIndex: boolean?}
 type LogConstructorSet = {FunctionCall: (Function:(...any?) -> ...any?, Args:{any?}, Return:{any?}, FunctionPath:string?) -> string, Namecall: (Instance:Instance, Method:string, Args:{any?}, Return:{any?}) -> string, Index: (Instance:Instance, Key:string, Return:{any?}) -> string, NewIndex: (Instance:Instance, Key:string, Value:any) -> string}
 type Session = {Configuration: SessionConfiguration, Targets: {string}, Data: buffer, Written: number, Start: number, End: number, Close: () -> (), GUID: string, Log: (LogString:string) -> (), Active: boolean, SaveToFile: (self:Session, FileName:string) -> ()}
@@ -742,7 +744,6 @@ local JSONEncode = function(...): string
         return HttpService:JSONEncode(...)
     end
 end
-local MAX_BUFFER_SIZE = 1024 * 1024 * 1024
 local Calligraph = {
     Version = '1.3.2',
 }
