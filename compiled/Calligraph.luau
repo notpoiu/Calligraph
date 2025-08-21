@@ -792,7 +792,7 @@ local LuaEncode = function(x)
     return Result
 end
 local Calligraph = {
-    Version = '1.4.8',
+    Version = '1.4.9',
 }
 local JSONLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return, FunctionPath)
