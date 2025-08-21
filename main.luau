@@ -87,7 +87,7 @@ end
 --#region Module
 
 local Calligraph = {
-	Version = "1.3.7",
+	Version = "1.3.9",
 }
 
 -- Log Constructors for the JSON format
@@ -185,6 +185,12 @@ local CodeLogConstructors: LogConstructorSet = {
 		)
 	end,
 	Index = function(Instance, Key, Return)
+
+		-- Check if Return is a RbxScriptSignal
+		if typeof(Return[1]) == "RBXScriptSignal" then
+			return string.format("%s.%s --> {<RBXScriptSignal %s>}", FormatInstancePath(Instance), Key, Key)
+		end
+
 		return string.format("%s.%s --> %s", FormatInstancePath(Instance), Key, LuaEncode(Return))
 	end,
 	NewIndex = function(Instance, Key, Value)
@@ -206,6 +212,10 @@ function Calligraph.NewMethodProxy(
 		local Args = { ... }
 		local Success, Return, ArgsN = Utils.GetReturnData(OldMethod, ...)
 		local ReturnFormatted = Success and Return or { ["error"] = Return[1] }
+
+		-- Remove the first argument since it's self and we're already logging it as a __namecall
+		table.remove(Args, 1)
+
 		task.spawn(function()
 			Session.Log(Formatter.Namecall(Instance, Method, Args, ReturnFormatted))
 		end)
@@ -215,6 +225,80 @@ function Calligraph.NewMethodProxy(
 			return error(Return[1])
 		end
 	end)
+end
+
+function Calligraph.NewRBXScriptSignalProxy(
+	Session: Session,
+	Formatter: LogConstructorSet,
+	Instance: Instance,
+	Signal: RBXScriptSignal
+)
+	local Proxy = {
+		Connect = newcclosure(function(self, Callback: (...any?) -> ...any?)
+			if checkcaller() then
+				return Signal:Connect(Callback)
+			end
+			task.spawn(function()
+				local SignalPath = FormatInstancePath(Instance) .. "." .. tostring(Signal):gsub("Signal ", "")
+				Session.Log(
+					string.format("%s:Connect(%s)", SignalPath, FormatCodeArgs({ Callback }))
+				)
+			end)
+			return Signal:Connect(Callback)
+		end),
+		ConnectParallel = newcclosure(function(self, Callback: (...any?) -> ...any?)
+			if checkcaller() then
+				return Signal:Connect(Callback)
+			end
+			task.spawn(function()
+				local SignalPath = FormatInstancePath(Instance) .. "." .. tostring(Signal):gsub("Signal ", "")
+				Session.Log(
+					string.format("%s:Connect(%s)", SignalPath, FormatCodeArgs({ Callback }))
+				)
+			end)
+			return Signal:Connect(Callback)
+		end),
+		Once = newcclosure(function(self, Callback: (...any?) -> ...any?)
+			if checkcaller() then
+				return Signal:Once(Callback)
+			end
+			task.spawn(function()
+				local SignalPath = FormatInstancePath(Instance) .. "." .. tostring(Signal):gsub("Signal ", "")
+				Session.Log(
+					string.format("%s:Once(%s)", SignalPath, FormatCodeArgs({ Callback }))
+				)
+			end)
+			return Signal:Once(Callback)
+		end),
+		Wait = newcclosure(function(self)
+			if checkcaller() then
+				return Signal:Wait()
+			end
+			task.spawn(function()
+				local SignalPath = FormatInstancePath(Instance) .. "." .. tostring(Signal):gsub("Signal ", "")
+				Session.Log(
+					string.format("%s:Wait()", SignalPath)
+				)
+			end)
+			return Signal:Wait()
+		end)
+	}
+
+	local SignalMetatable = {
+		__index = function(self, key)
+			return rawget(Signal, key)
+		end,
+		__tostring = function()
+			return tostring(Signal)
+		end,
+		__type = function()
+			return "RBXScriptSignal"
+		end
+	}
+
+	setmetatable(Proxy, SignalMetatable)
+
+	return Proxy
 end
 
 -- i hate this
@@ -406,6 +490,8 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 
 				if type(Return) == "function" and not checkcaller() then
 					return Calligraph.NewMethodProxy(Session, LogFormatter, Index, Self, Return)
+				elseif typeof(Return) == "RBXScriptSignal" then
+					return Calligraph.NewRBXScriptSignalProxy(Session, LogFormatter, Self, Return)
 				end
 
 				return Return
