@@ -281,7 +281,7 @@ do
                 end
                 TypeCases['function'] = function(value)
                     if FunctionsReturnRaw then
-                        return value()
+                        return string_format('%s Name: %s', tostring(value), (debug.info(value, 'n') ~= '' and debug.info(value, 'n') or '<Anonymous Function>'))
                     end
 
                     return string_format('function()%sreturn end', (OutputWarnings and 
@@ -822,9 +822,7 @@ local CodeLogConstructors: LogConstructorSet = {
         local CallArgs = {}
 
         for i, v in ipairs(Args)do
-            if i > 1 then
-                table.insert(CallArgs, v)
-            end
+            table.insert(CallArgs, v)
         end
 
         return string.format('%s:%s(%s) --> %s', FormatInstancePath(Instance), Method, FormatCodeArgs(CallArgs), LuaEncode(Return))
