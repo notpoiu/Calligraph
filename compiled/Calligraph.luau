@@ -755,7 +755,7 @@ local JSONEncode = function(...): string
     end
 end
 local Calligraph = {
-    Version = '1.3.5',
+    Version = '1.3.6',
 }
 local JSONLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return, FunctionPath)
