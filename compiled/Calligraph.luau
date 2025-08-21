@@ -1336,6 +1336,10 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
             Old,
             ...
         )
+            if checkcaller() then
+                return Old(...)
+            end
+
             local Success, Return, _ = Utils.GetReturnData(Old, ...)
 
             if Success then

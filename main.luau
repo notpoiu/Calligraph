@@ -647,6 +647,10 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 
 	if Session.Configuration.LogMetamethodFunctionFetches then
 		HookMgr.RegisterHook(`Calligraph:{Session.GUID}:MetamethodFunctionFetch`, getrenv().debug.info, function(Old, ...)
+			if checkcaller() then
+				return Old(...)
+			end
+			
 			local Success, Return, _ = Utils.GetReturnData(Old, ...)
 
 			if Success then
