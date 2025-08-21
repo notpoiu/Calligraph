@@ -909,6 +909,46 @@ end
 function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfiguration)
     local Session: Session
     local LogFormatter: LogConstructorSet = (Configuration.LogAsCode == true) and CodeLogConstructors or JSONLogConstructors
+    local LastLogContent: string = ''
+    local RepeatCount: number = 0
+
+    local function WriteToBuffer(FormattedLog: string)
+        if Session.Written + #FormattedLog > MAX_BUFFER_SIZE then
+            local FinalMsg = '[SYSTEM] Buffer full. Further logs will be ignored.\n'
+
+            if Session.Written + #FinalMsg <= MAX_BUFFER_SIZE then
+                buffer.writestring(Session.Data, Session.Written, FinalMsg)
+
+                Session.Written += #FinalMsg
+            end
+
+            Session.Active = false
+
+            warn('Calligraph: Log buffer is full. Logging has been stopped.')
+
+            return
+        end
+
+        buffer.writestring(Session.Data, Session.Written, FormattedLog)
+
+        Session.Written += #FormattedLog
+    end
+    local function FlushRepeatedLog()
+        if RepeatCount > 1 then
+            local Timestamp = os.date('%Y-%m-%d %H:%M:%S')
+            local RepeatLog = string.format(`[%s] (Repeated x%d) %s\n`, Timestamp, RepeatCount, LastLogContent)
+
+            WriteToBuffer(RepeatLog)
+        elseif RepeatCount == 1 then
+            local Timestamp = os.date('%Y-%m-%d %H:%M:%S')
+            local SingleLog = string.format(`[%s] %s\n`, Timestamp, LastLogContent)
+
+            WriteToBuffer(SingleLog)
+        end
+
+        RepeatCount = 0
+        LastLogContent = ''
+    end
 
     Session = {
         Configuration = Configuration,
@@ -931,35 +971,36 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
             Session.Active = false
 
             HookMgr.ClearHooks()
+            FlushRepeatedLog()
         end,
         Log = function(LogString: string)
             if not Session.Active then
                 return
             end
 
-            local FormattedLog = string.format(`[%s] %s\n`, os.date('%Y-%m-%d %H:%M:%S'), LogString)
+            local IsSystemMessage = string.match(LogString, '^%[SYSTEM%]') or string.match(LogString, '^Calligraph v') or string.match(LogString, '^Session') or string.match(LogString, '^Configuration:') or string.match(LogString, '^Targets:') or string.match(LogString, '^Log format:')
 
-            if Session.Written + #FormattedLog > MAX_BUFFER_SIZE then
-                local FinalMsg = '[SYSTEM] Buffer full. Further logs will be ignored.\n'
+            if IsSystemMessage then
+                FlushRepeatedLog()
 
-                if Session.Written + #FinalMsg <= MAX_BUFFER_SIZE then
-                    buffer.writestring(Session.Data, Session.Written, FinalMsg)
+                local FormattedLog = string.format(`[%s] %s\n`, os.date('%Y-%m-%d %H:%M:%S'), LogString)
 
-                    Session.Written += #FinalMsg
-                end
-
-                Session.Active = false
-
-                warn('Calligraph: Log buffer is full. Logging has been stopped.')
+                WriteToBuffer(FormattedLog)
 
                 return
             end
+            if LogString == LastLogContent then
+                RepeatCount += 1
+            else
+                FlushRepeatedLog()
 
-            buffer.writestring(Session.Data, Session.Written, FormattedLog)
-
-            Session.Written += #FormattedLog
+                LastLogContent = LogString
+                RepeatCount = 1
+            end
         end,
         SaveToFile = function(self: Session, FileName: string)
+            FlushRepeatedLog()
+
             if not writefile or not appendfile then
                 warn(
 [[Calligraph: 'writefile/appendfile' is not available. Cannot save to file.]])
