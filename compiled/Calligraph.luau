@@ -1231,7 +1231,8 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
 
                         if Session.Configuration.MetaMethodFunctionFetchTrap then
                             ModifiedArgs[i] = newcclosure(function()
-                                print('[Calligraph] Metamethod trap triggered!')
+                                print(string.format(
+[[[Calligraph] Metamethod trap triggered! Method: %s, Traceback: %s]], GameMetamethods[Value], debug.traceback()))
                                 task.spawn(Session.Log, string.format('[!!!] Metamethod trap triggered! Method: %s, Traceback: %s', GameMetamethods[Value], debug.traceback()))
 
                                 return coroutine.yield()
