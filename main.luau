@@ -21,6 +21,16 @@ type SessionConfiguration = {
 	LogAsCode              : boolean?, -- Log as executable Luau code instead of JSON? (Defaults to true)
 	LuraphCompatibility    : boolean?, -- Enable Luraph compatibility mode? (Defaults to false)
 	FilterInstanceIndex    : boolean?, -- Filter out instance index calls? (Defaults to false)
+	PrettyPrint            : boolean?, -- Enable pretty printing of logs? (Defaults to true)
+}
+
+local DefaultSessionConfiguration: SessionConfiguration = {
+	LogEnvironment = true,
+	LogMetamethods = true,
+	LogAsCode = true,
+	LuraphCompatibility = false,
+	FilterInstanceIndex = false,
+	PrettyPrint = true,
 }
 
 type LogConstructorSet = {
@@ -68,7 +78,7 @@ end
 --#region Module
 
 local Calligraph = {
-	Version = "1.3.5",
+	Version = "1.3.6",
 }
 
 -- Log Constructors for the JSON format
@@ -234,6 +244,14 @@ function Calligraph.NewFunctionProxy(
 end
 
 function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfiguration)
+
+	-- Load default session configuration for unset keys
+	for Key, Value in next, DefaultSessionConfiguration do
+		if Configuration[Key] == nil then
+			Configuration[Key] = Value
+		end
+	end
+
 	local Session: Session
 	local LogFormatter: LogConstructorSet = (Configuration.LogAsCode == true) and CodeLogConstructors
 		or JSONLogConstructors

@@ -728,7 +728,17 @@ shared.DirectCall = {}
 
 local MAX_BUFFER_SIZE = 1024 * 1024 * 1024
 
-type SessionConfiguration = {LogEnvironment: boolean, LogMetamethods: boolean, LogAsCode: boolean?, LuraphCompatibility: boolean?, FilterInstanceIndex: boolean?}
+type SessionConfiguration = {LogEnvironment: boolean, LogMetamethods: boolean, LogAsCode: boolean?, LuraphCompatibility: boolean?, FilterInstanceIndex: boolean?, PrettyPrint: boolean?}
+
+local DefaultSessionConfiguration: SessionConfiguration = {
+    LogEnvironment = true,
+    LogMetamethods = true,
+    LogAsCode = true,
+    LuraphCompatibility = false,
+    FilterInstanceIndex = false,
+    PrettyPrint = true,
+}
+
 type LogConstructorSet = {FunctionCall: (Function:(...any?) -> ...any?, Args:{any?}, Return:{any?}, FunctionPath:string?) -> string, Namecall: (Instance:Instance, Method:string, Args:{any?}, Return:{any?}) -> string, Index: (Instance:Instance, Key:string, Return:{any?}) -> string, NewIndex: (Instance:Instance, Key:string, Value:any) -> string}
 type Session = {Configuration: SessionConfiguration, Targets: {string}, Data: buffer, Written: number, Start: number, End: number, Close: () -> (), GUID: string, Log: (LogString:string) -> (), Active: boolean, SaveToFile: (self:Session, FileName:string) -> ()}
 
@@ -907,6 +917,12 @@ function Calligraph.NewFunctionProxy(
     end
 end
 function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfiguration)
+    for Key, Value in next, DefaultSessionConfiguration do
+        if Configuration[Key] == nil then
+            Configuration[Key] = Value
+        end
+    end
+
     local Session: Session
     local LogFormatter: LogConstructorSet = (Configuration.LogAsCode == true) and CodeLogConstructors or JSONLogConstructors
     local LastLogContent: string = ''
