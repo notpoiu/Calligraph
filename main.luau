@@ -23,6 +23,7 @@ type SessionConfiguration = {
 	FilterInstanceIndex    : boolean?, -- Filter out instance index calls? (Defaults to false)
 	PrettyPrint            : boolean?, -- Enable pretty printing of logs? (Defaults to true)
 	ShowDebugIdForNilInstancesInsteadOfName : boolean?, -- Show DebugId for nil instances instead of their name? (Defaults to true)
+	LogMetamethodFunctionFetches : boolean?, -- Log metamethod function fetches? (Defaults to true)
 }
 
 local DefaultSessionConfiguration: SessionConfiguration = {
@@ -93,7 +94,7 @@ end
 --#region Module
 
 local Calligraph = {
-	Version = "1.4.7",
+	Version = "1.4.8",
 }
 
 -- Log Constructors for the JSON format
@@ -373,6 +374,12 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 	local LastLogContent: string = ""
 	local RepeatCount: number = 0
 
+	local GameMetamethods = {
+		[HookMgr.GameMT.__index] = true,
+		[HookMgr.GameMT.__newindex] = true,
+		[HookMgr.GameMT.__namecall] = true
+	}
+
 	local function WriteToBuffer(FormattedLog: string)
 		if Session.Written + #FormattedLog > MAX_BUFFER_SIZE then
 			local FinalMsg = "[SYSTEM] Buffer full. Further logs will be ignored.\n"
@@ -634,6 +641,25 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 		end
 
 		ScanAndHookWhitelisted(getrenv())
+	end
+
+	if Session.Configuration.LogMetamethodFunctionFetches then
+		HookMgr.RegisterHook(`Calligraph:{Session.GUID}:MetamethodFunctionFetch`, getrenv().debug.info, function(Old, ...)
+			local Success, Return, _ = Utils.GetReturnData(Old, ...)
+
+			if Success then
+				if #Return == 1 then
+					local Value = Return[1]
+					if typeof(Value) == "function" and iscclosure(Value) then
+						if GameMetamethods[Return] then
+							Session.Log(string.format("[!!!] Raw metamethod function fetched: %s", tostring(Value)))
+						end
+					end
+				end
+			end
+			
+			return Old(...) -- doublecall but whatever i cant be assed to recreate the errors
+		end)
 	end
 
 	return Session
