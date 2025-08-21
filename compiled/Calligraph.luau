@@ -281,7 +281,11 @@ do
                 end
                 TypeCases['function'] = function(value)
                     if FunctionsReturnRaw then
-                        return string_format('%s Name: %s', tostring(value), (debug.info(value, 'n') ~= '' and debug.info(value, 'n') or '<Anonymous Function>'))
+                        if debug.info(value, 'n') ~= '' then
+                            return string_format('<%s Name: %s>', tostring(value), debug.info(value, 'n'))
+                        end
+
+                        return string_format('<Anonymous %s>', tostring(value))
                     end
 
                     return string_format('function()%sreturn end', (OutputWarnings and 
@@ -755,9 +759,17 @@ local JSONEncode = function(...): string
     end
 end
 local LuaEncode = function(x)
-    return LuaEncodeCore(x, {
+    local OldThreadContext = getthreadcontext()
+
+    setthreadcontext(8)
+
+    local Result = LuaEncodeCore(x, {
         Prettify = shared.Prettify,
     })
+
+    setthreadcontext(OldThreadContext)
+
+    return Result
 end
 local Calligraph = {
     Version = '1.4.0',
@@ -817,7 +829,7 @@ local function FormatInstancePath(Instance: Instance): string
     if not Instance then
         return 'nil'
     end
-    if Instance.Parent == nil then
+    if Instance.Parent == nil and (Instance::any) ~= game then
         local OldContext = getthreadcontext()
 
         setthreadcontext(8)
@@ -850,7 +862,7 @@ local CodeLogConstructors: LogConstructorSet = {
     end,
     Index = function(Instance, Key, Return)
         if typeof(Return[1]) == 'RBXScriptSignal' then
-            return string.format('%s.%s --> {<RBXScriptSignal %s>}', FormatInstancePath(Instance), Key, Key)
+            return string.format('%s.%s --> <RBXScriptSignal %s>', FormatInstancePath(Instance), Key, Key)
         end
 
         return string.format('%s.%s --> %s', FormatInstancePath(Instance), Key, LuaEncode(Return))
