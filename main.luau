@@ -100,7 +100,7 @@ end
 --#region Module
 
 local Calligraph = {
-	Version = "1.5.2",
+	Version = "1.5.3",
 }
 
 -- Log Constructors for the JSON format
@@ -654,26 +654,53 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 				return Old(...)
 			end
 
-			-- This dosent take into account the extra stack levels that are added by calling the function and using pcall in it.
-			-- TODO: Fix not taking into account the extra stack levels added by function calls
-			-- Extra stack depth = 2 (function call to GetReturnData) + 1 (pcall inside GetReturnData) atleast i think
-			local Success, Return, ReturnN = Utils.GetReturnData(Old, ...)
-
-			if not Success then
+			local Args = table.pack(...)
+			if Args.n ~= 2 then
 				return Old(...)
 			end
-			
-			for i = 1, ReturnN do
-				local Value = Return[i]
 
-				if 
-					typeof(Value) == "function" and
-					iscclosure(Value) and
-					GameMetamethods[Return]
-				then
-					task.spawn(Session.Log, string.format("[!!!] Raw metamethod function fetched: %s", tostring(Value)))
-					if Session.Configuration.MetaMethodFunctionFetchTrap then
-						return coroutine.yield()	
+			if typeof(Args[1]) == 'number' and typeof(Args[2]) == 'string' and Args[2]:match("f") then
+
+				-- stack visualization of debug.info call:
+				-- 1. current level
+				-- 2. hook wrapper [Added by hook]
+				-- 3. pcall inside GetReturnData [Added by hook]
+				-- 4. function call to GetReturnData [Added by hook]
+				-- 5. cclosure wrapper [Added by hook]
+				-- 6. original function call
+
+				-- our hook adds 4 stack levels, so we need to offset the number.
+
+				-- function Utils.GetReturnData(Function : (...any?) -> (...any?), ...)
+				-- 	local Results = table.pack(pcall(Function, ...))
+				-- 	local ArgsN = Results.n - 1
+					
+				-- 	-- Remove Args.n now
+				-- 	if Results.n then
+				-- 		Results.n = nil
+				-- 	end
+				--
+				-- 	return table.remove(Results, 1), Results, ArgsN
+				-- end
+
+				local Success, Return, ReturnN = Utils.GetReturnData(Old, Args[1] + 4, Args[2])
+
+				if not Success then
+					return Old(...)
+				end
+				
+				for i = 1, ReturnN do
+					local Value = Return[i]
+
+					if 
+						typeof(Value) == "function" and
+						iscclosure(Value) and
+						GameMetamethods[Return]
+					then
+						task.spawn(Session.Log, string.format("[!!!] Raw metamethod function fetched: %s", tostring(Value)))
+						if Session.Configuration.MetaMethodFunctionFetchTrap then
+							return coroutine.yield()	
+						end
 					end
 				end
 			end

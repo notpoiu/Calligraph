@@ -106,7 +106,7 @@ do
             function SerializeString(inputString)
                 return table_concat({
                     '"',
-                    string_gsub(inputString, '[%z\\"\1-\31\127-\255]', SpecialCharacters),
+                    string_gsub(inputString, '[%z\\"\1-\31\127-\u{ff}]', SpecialCharacters),
                     '"',
                 })
             end
@@ -795,7 +795,7 @@ local LuaEncode = function(x)
     return Result
 end
 local Calligraph = {
-    Version = '1.5.2',
+    Version = '1.5.3',
 }
 local JSONLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return, FunctionPath)
@@ -1341,20 +1341,27 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
                 return Old(...)
             end
 
-            local Success, Return, ReturnN = Utils.GetReturnData(Old, ...)
+            local Args = table.pack(...)
 
-            if not Success then
+            if Args.n ~= 2 then
                 return Old(...)
             end
+            if typeof(Args[1]) == 'number' and typeof(Args[2]) == 'string' and Args[2]:match('f') then
+                local Success, Return, ReturnN = Utils.GetReturnData(Old, Args[1] + 4, Args[2])
 
-            for i = 1, ReturnN do
-                local Value = Return[i]
+                if not Success then
+                    return Old(...)
+                end
 
-                if typeof(Value) == 'function' and iscclosure(Value) and GameMetamethods[Return] then
-                    task.spawn(Session.Log, string.format('[!!!] Raw metamethod function fetched: %s', tostring(Value)))
+                for i = 1, ReturnN do
+                    local Value = Return[i]
 
-                    if Session.Configuration.MetaMethodFunctionFetchTrap then
-                        return coroutine.yield()
+                    if typeof(Value) == 'function' and iscclosure(Value) and GameMetamethods[Return] then
+                        task.spawn(Session.Log, string.format('[!!!] Raw metamethod function fetched: %s', tostring(Value)))
+
+                        if Session.Configuration.MetaMethodFunctionFetchTrap then
+                            return coroutine.yield()
+                        end
                     end
                 end
             end
