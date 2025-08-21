@@ -91,7 +91,7 @@ end
 --#region Module
 
 local Calligraph = {
-	Version = "1.4.0",
+	Version = "1.4.1",
 }
 
 -- Log Constructors for the JSON format
@@ -170,7 +170,7 @@ end
 
 local CodeLogConstructors: LogConstructorSet = {
 	FunctionCall = function(Function, Args, Return, FunctionPath)
-		local FunctionName = FunctionPath or debug.info(Function, "n") or "anonymous_function"
+		local FunctionName = FunctionPath or debug.info(Function, 'n') or `<Anonymous {tostring(Function)}>`
 		return string.format("%s(%s) --> %s", FunctionName, FormatCodeArgs(Args), LuaEncode(Return))
 	end,
 	Namecall = function(Instance, Method, Args, Return)
