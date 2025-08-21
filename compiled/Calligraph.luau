@@ -794,7 +794,7 @@ local LuaEncode = function(x)
     return Result
 end
 local Calligraph = {
-    Version = '1.5.0',
+    Version = '1.5.1',
 }
 local JSONLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return, FunctionPath)
@@ -1344,13 +1344,16 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
 
                     if typeof(Value) == 'function' and iscclosure(Value) then
                         if GameMetamethods[Return] then
-                            Session.Log(string.format('[!!!] Raw metamethod function fetched: %s', tostring(Value)))
+                            task.spawn(function()
+                                Session.Log(string.format('[!!!] Raw metamethod function fetched: %s', tostring(Value)))
+                            end)
+
+                            if Session.Configuration.MetaMethodFunctionFetchTrap then
+                                return coroutine.yield()
+                            end
                         end
                     end
                 end
-            end
-            if Session.Configuration.MetaMethodFunctionFetchTrap then
-                return coroutine.yield
             end
 
             return Old(...)
