@@ -817,15 +817,13 @@ local function FormatInstancePath(Instance: Instance): string
     if not Instance then
         return 'nil'
     end
-
-    local Path = Instance:GetFullName()
-
-    if Path == '' then
+    if Instance.Parent == nil then
         local OldContext = getthreadcontext()
 
         setthreadcontext(8)
 
-        local NilInstanceString = `<Nil Instance | Name: {Instance.Name} | UniqueId: {Instance.UniqueId}>`
+        local _, UniqueId = pcall(gethiddenproperty, Instance, 'UniqueId')
+        local NilInstanceString = `<Nil Instance | Name: {Instance.Name} | UniqueId: {UniqueId}>`
 
         setthreadcontext(OldContext)
 

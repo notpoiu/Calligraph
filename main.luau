@@ -87,7 +87,7 @@ end
 --#region Module
 
 local Calligraph = {
-	Version = "1.3.9",
+	Version = "1.4.0",
 }
 
 -- Log Constructors for the JSON format
@@ -147,14 +147,15 @@ local function FormatInstancePath(Instance: Instance): string
 		return "nil"
 	end
 
-	local Path = Instance:GetFullName()
+	-- local Path = Instance:GetFullName()
 
-	if Path == "" then
+	if Instance.Parent == nil then
 		-- idk how to rly handle nil instances yet
 		-- return `nil...{Instance.Name}`
 		local OldContext = getthreadcontext()
 		setthreadcontext(8)
-		local NilInstanceString = `<Nil Instance | Name: {Instance.Name} | UniqueId: {Instance.UniqueId}>`
+		local _, UniqueId = pcall(gethiddenproperty, Instance, 'UniqueId')
+		local NilInstanceString = `<Nil Instance | Name: {Instance.Name} | UniqueId: {UniqueId}>`
 		setthreadcontext(OldContext)
 		return NilInstanceString
 	end
