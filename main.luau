@@ -200,7 +200,7 @@ local CodeLogConstructors: LogConstructorSet = {
 		return string.format("%s.%s --> %s", FormatInstancePath(Instance), Key, LuaEncode(Return))
 	end,
 	NewIndex = function(Instance, Key, Value)
-		return string.format("%s.%s = %s", FormatInstancePath(Instance), Key, LuaEncode({ Value }))
+		return string.format("%s.%s = %s", FormatInstancePath(Instance), Key, FormatCodeArgs({ Value }))
 	end,
 }
 
