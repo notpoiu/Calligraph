@@ -169,12 +169,15 @@ local EvaluateInstancePath do
         end
 
         -- Fall back to no ret.. Only objects parented under game/workspace will be serialized
+        local OldThreadContext = getthreadcontext()
+        setthreadcontext(8)
         local NilInstanceString = `<{object.ClassName}`
 		if shared.UseDebugId then
 			NilInstanceString ..= ` {object:GetDebugId()}>`
 		else
 			NilInstanceString ..= ` {object.Name}>`
 		end
+        setthreadcontext(OldThreadContext)
 
         return NilInstanceString
     end

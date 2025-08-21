@@ -94,7 +94,7 @@ end
 --#region Module
 
 local Calligraph = {
-	Version = "1.4.8",
+	Version = "1.4.9",
 }
 
 -- Log Constructors for the JSON format
@@ -168,7 +168,6 @@ local function FormatInstancePath(Instance: Instance): string
 		else
 			NilInstanceString ..= ` {Instance.Name}>`
 		end
-
 		setthreadcontext(OldContext)
 		return NilInstanceString
 	end

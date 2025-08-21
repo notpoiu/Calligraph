@@ -176,6 +176,10 @@ do
                     ObjectPointer = ObjectParent
                 end
 
+                local OldThreadContext = getthreadcontext()
+
+                setthreadcontext(8)
+
                 local NilInstanceString = `<{object.ClassName}`
 
                 if shared.UseDebugId then
@@ -183,6 +187,8 @@ do
                 else
                     NilInstanceString ..= ` {object.Name}>`
                 end
+
+                setthreadcontext(OldThreadContext)
 
                 return NilInstanceString
             end
