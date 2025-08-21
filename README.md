@@ -16,10 +16,10 @@ print("Initializing Calligraph session...")
 local Session = CalligraphModule:NewSession(
 	{ Target }, -- List of targets, value is obtained from calling debug.info(..., 's') on a target script function.
 	{
-		LogEnvironment = false,  -- Log calls to global functions
+		LogEnvironment = true,  -- Log calls to global functions
 		LogMetamethods = true,  -- Log calls like :GetChildren(), .Name
 		LogAsCode = true,       -- Generate Luau code instead of JSON
-		LuraphCompatability = true, -- Filters out junk calls from Luraph
+		LuraphCompatibility = true, -- Filters out junk calls from Luraph
 		FilterInstanceIndex = true -- Filters out indexes that return instances as they are usually redundant
 	}
 )
