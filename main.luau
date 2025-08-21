@@ -79,7 +79,7 @@ local LuaEncode = function(x)
 	local Result = LuaEncodeCore(
 		x,
 		{
-			Prettify = shared.Prettify
+			Prettify = #x > 1 and shared.Prettify
 		}
 	)
 	setthreadcontext(OldThreadContext)
