@@ -74,12 +74,16 @@ local JSONEncode = function(...): string
 end
 
 local LuaEncode = function(x)
-	return LuaEncodeCore(
+	local OldThreadContext = getthreadcontext()
+	setthreadcontext(8)
+	local Result = LuaEncodeCore(
 		x,
 		{
 			Prettify = shared.Prettify
 		}
 	)
+	setthreadcontext(OldThreadContext)
+	return Result
 end
 
 --#endregion
@@ -149,7 +153,8 @@ local function FormatInstancePath(Instance: Instance): string
 
 	-- local Path = Instance:GetFullName()
 
-	if Instance.Parent == nil then
+	-- make linter happy (httpget union makes game global not an instance)
+	if Instance.Parent == nil and (Instance :: any) ~= game then
 		-- idk how to rly handle nil instances yet
 		-- return `nil...{Instance.Name}`
 		local OldContext = getthreadcontext()
@@ -189,7 +194,7 @@ local CodeLogConstructors: LogConstructorSet = {
 
 		-- Check if Return is a RbxScriptSignal
 		if typeof(Return[1]) == "RBXScriptSignal" then
-			return string.format("%s.%s --> {<RBXScriptSignal %s>}", FormatInstancePath(Instance), Key, Key)
+			return string.format("%s.%s --> <RBXScriptSignal %s>", FormatInstancePath(Instance), Key, Key)
 		end
 
 		return string.format("%s.%s --> %s", FormatInstancePath(Instance), Key, LuaEncode(Return))
