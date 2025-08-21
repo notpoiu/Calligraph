@@ -294,6 +294,12 @@ function Calligraph.NewRBXScriptSignalProxy(
 		end,
 		__type = function()
 			return "RBXScriptSignal"
+		end,
+		__eq = function(self, other)
+			if other == Signal then
+				return true
+			end
+			return false
 		end
 	}
 

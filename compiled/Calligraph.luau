@@ -760,7 +760,7 @@ local LuaEncode = function(x)
     })
 end
 local Calligraph = {
-    Version = '1.3.9',
+    Version = '1.4.0',
 }
 local JSONLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return, FunctionPath)
@@ -959,6 +959,13 @@ function Calligraph.NewRBXScriptSignalProxy(
         end,
         __type = function()
             return 'RBXScriptSignal'
+        end,
+        __eq = function(self, other)
+            if other == Signal then
+                return true
+            end
+
+            return false
         end,
     }
 
