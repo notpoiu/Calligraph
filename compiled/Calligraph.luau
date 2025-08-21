@@ -806,7 +806,15 @@ local function FormatInstancePath(Instance: Instance): string
     local Path = Instance:GetFullName()
 
     if Path == '' then
-        return `nil...{Instance.Name}`
+        local OldContext = getthreadcontext()
+
+        setthreadcontext(8)
+
+        local NilInstanceString = `<Nil Instance | Name: {Instance.Name} | UniqueId: {Instance.UniqueId}>`
+
+        setthreadcontext(OldContext)
+
+        return NilInstanceString
     end
 
     return EvaluateInstancePath(Instance)
