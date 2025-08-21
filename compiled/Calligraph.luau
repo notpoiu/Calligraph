@@ -176,7 +176,15 @@ do
                     ObjectPointer = ObjectParent
                 end
 
-                return `<Nil Instance | Name: {object.Name} | ClassName: {object.ClassName}>`
+                local NilInstanceString = `<{object.ClassName}`
+
+                if shared.UseDebugId then
+                    NilInstanceString ..= ` {object:GetDebugId()}>`
+                else
+                    NilInstanceString ..= ` {object.Name}>`
+                end
+
+                return NilInstanceString
             end
         end
 
@@ -778,7 +786,7 @@ local LuaEncode = function(x)
     return Result
 end
 local Calligraph = {
-    Version = '1.4.6',
+    Version = '1.4.7',
 }
 local JSONLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return, FunctionPath)
@@ -840,12 +848,12 @@ local function FormatInstancePath(Instance: Instance): string
 
         setthreadcontext(8)
 
-        local NilInstanceString = `<Nil Instance {Instance.ClassName}`
+        local NilInstanceString = `<{Instance.ClassName}`
 
         if shared.UseDebugId then
-            NilInstanceString ..= ` | DebugId: {Instance:GetDebugId()}`
+            NilInstanceString ..= ` {Instance:GetDebugId()}>`
         else
-            NilInstanceString ..= ` | Name: {Instance.Name}>`
+            NilInstanceString ..= ` {Instance.Name}>`
         end
 
         setthreadcontext(OldContext)

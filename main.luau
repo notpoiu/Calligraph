@@ -93,7 +93,7 @@ end
 --#region Module
 
 local Calligraph = {
-	Version = "1.4.6",
+	Version = "1.4.7",
 }
 
 -- Log Constructors for the JSON format
@@ -161,12 +161,11 @@ local function FormatInstancePath(Instance: Instance): string
 		-- return `nil...{Instance.Name}`
 		local OldContext = getthreadcontext()
 		setthreadcontext(8)
-		local NilInstanceString = `<Nil Instance {Instance.ClassName}`
-
+		local NilInstanceString = `<{Instance.ClassName}`
 		if shared.UseDebugId then
-			NilInstanceString ..= ` | DebugId: {Instance:GetDebugId()}`
+			NilInstanceString ..= ` {Instance:GetDebugId()}>`
 		else
-			NilInstanceString ..= ` | Name: {Instance.Name}>`
+			NilInstanceString ..= ` {Instance.Name}>`
 		end
 
 		setthreadcontext(OldContext)
