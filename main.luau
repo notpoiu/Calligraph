@@ -24,6 +24,7 @@ type SessionConfiguration = {
 	PrettyPrint            : boolean?, -- Enable pretty printing of logs? (Defaults to true)
 	ShowDebugIdForNilInstancesInsteadOfName : boolean?, -- Show DebugId for nil instances instead of their name? (Defaults to true)
 	LogMetamethodFunctionFetches : boolean?, -- Log metamethod function fetches? (Defaults to true)
+	MetaMethodFunctionFetchTrap : boolean?, -- Replace metamethod function fetches with traps? (Defaults to true)
 }
 
 local DefaultSessionConfiguration: SessionConfiguration = {
@@ -34,6 +35,8 @@ local DefaultSessionConfiguration: SessionConfiguration = {
 	FilterInstanceIndex = false,
 	PrettyPrint = true,
 	ShowDebugIdForNilInstancesInsteadOfName = true,
+	LogMetamethodFunctionFetches = true,
+	MetaMethodFunctionFetchTrap = true,
 }
 
 type LogConstructorSet = {
@@ -94,7 +97,7 @@ end
 --#region Module
 
 local Calligraph = {
-	Version = "1.4.9",
+	Version = "1.5.0",
 }
 
 -- Log Constructors for the JSON format
@@ -655,6 +658,10 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 						end
 					end
 				end
+			end
+
+			if Session.Configuration.MetaMethodFunctionFetchTrap then
+				return coroutine.yield
 			end
 			
 			return Old(...) -- doublecall but whatever i cant be assed to recreate the errors

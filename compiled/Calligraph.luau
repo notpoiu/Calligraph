@@ -751,7 +751,7 @@ shared.DirectCall = {}
 
 local MAX_BUFFER_SIZE = 1024 * 1024 * 1024
 
-type SessionConfiguration = {LogEnvironment: boolean, LogMetamethods: boolean, LogAsCode: boolean?, LuraphCompatibility: boolean?, FilterInstanceIndex: boolean?, PrettyPrint: boolean?, ShowDebugIdForNilInstancesInsteadOfName: boolean?, LogMetamethodFunctionFetches: boolean?}
+type SessionConfiguration = {LogEnvironment: boolean, LogMetamethods: boolean, LogAsCode: boolean?, LuraphCompatibility: boolean?, FilterInstanceIndex: boolean?, PrettyPrint: boolean?, ShowDebugIdForNilInstancesInsteadOfName: boolean?, LogMetamethodFunctionFetches: boolean?, MetaMethodFunctionFetchTrap: boolean?}
 
 local DefaultSessionConfiguration: SessionConfiguration = {
     LogEnvironment = true,
@@ -761,6 +761,8 @@ local DefaultSessionConfiguration: SessionConfiguration = {
     FilterInstanceIndex = false,
     PrettyPrint = true,
     ShowDebugIdForNilInstancesInsteadOfName = true,
+    LogMetamethodFunctionFetches = true,
+    MetaMethodFunctionFetchTrap = true,
 }
 
 type LogConstructorSet = {FunctionCall: (Function:(...any?) -> ...any?, Args:{any?}, Return:{any?}, FunctionPath:string?) -> string, Namecall: (Instance:Instance, Method:string, Args:{any?}, Return:{any?}) -> string, Index: (Instance:Instance, Key:string, Return:{any?}) -> string, NewIndex: (Instance:Instance, Key:string, Value:any) -> string}
@@ -792,7 +794,7 @@ local LuaEncode = function(x)
     return Result
 end
 local Calligraph = {
-    Version = '1.4.9',
+    Version = '1.5.0',
 }
 local JSONLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return, FunctionPath)
@@ -1346,6 +1348,9 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
                         end
                     end
                 end
+            end
+            if Session.Configuration.MetaMethodFunctionFetchTrap then
+                return coroutine.yield
             end
 
             return Old(...)
