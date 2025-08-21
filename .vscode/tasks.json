@@ -1,0 +1,33 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "shell",
+
+      "windows": {
+        "command": ".\\compile.bat"
+      },
+      "osx": {
+        "command": "bash",
+        "args": ["./compile.sh"]
+      },
+      "linux": {
+        "command": "bash",
+        "args": ["./compile.sh"]
+      },
+
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      }
+    }
+  ]
+}

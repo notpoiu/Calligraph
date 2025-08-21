@@ -106,7 +106,7 @@ do
             function SerializeString(inputString)
                 return table_concat({
                     '"',
-                    string_gsub(inputString, '[%z\\"\1-\31\127-\u{ff}]', SpecialCharacters),
+                    string_gsub(inputString, '[%z\\"\1-\31\127-\255]', SpecialCharacters),
                     '"',
                 })
             end

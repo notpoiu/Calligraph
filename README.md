@@ -35,6 +35,15 @@ Session:Close()
 Session:SaveToFile(LogFile)
 ```
 
-# Compilation with DarkLua
+# Compilation
+
+## Windows
 
 - Run compile.bat and check compiled folder
+
+## Linux/MacOS
+
+1. Install [rokit](https://github.com/rojo-rbx/rokit) if you haven't already
+2. Open the command-line shell of your liking and [cd to this repository](https://www.quora.com/What-does-it-mean-to-CD-into-a-directory-and-how-can-I-do-that-Can-someone-explain-it-in-a-laymans-term)
+3. Run `rokit install` and wait for it to install all the dependencies
+4. Run `sh compile.sh` and check compiled folder
