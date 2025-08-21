@@ -737,7 +737,7 @@ shared.DirectCall = {}
 
 local MAX_BUFFER_SIZE = 1024 * 1024 * 1024
 
-type SessionConfiguration = {LogEnvironment: boolean, LogMetamethods: boolean, LogAsCode: boolean?, LuraphCompatibility: boolean?, FilterInstanceIndex: boolean?, PrettyPrint: boolean?}
+type SessionConfiguration = {LogEnvironment: boolean, LogMetamethods: boolean, LogAsCode: boolean?, LuraphCompatibility: boolean?, FilterInstanceIndex: boolean?, PrettyPrint: boolean?, ShowDebugIdForNilInstancesInsteadOfName: boolean?}
 
 local DefaultSessionConfiguration: SessionConfiguration = {
     LogEnvironment = true,
@@ -746,6 +746,7 @@ local DefaultSessionConfiguration: SessionConfiguration = {
     LuraphCompatibility = false,
     FilterInstanceIndex = false,
     PrettyPrint = true,
+    ShowDebugIdForNilInstancesInsteadOfName = true,
 }
 
 type LogConstructorSet = {FunctionCall: (Function:(...any?) -> ...any?, Args:{any?}, Return:{any?}, FunctionPath:string?) -> string, Namecall: (Instance:Instance, Method:string, Args:{any?}, Return:{any?}) -> string, Index: (Instance:Instance, Key:string, Return:{any?}) -> string, NewIndex: (Instance:Instance, Key:string, Value:any) -> string}
@@ -777,7 +778,7 @@ local LuaEncode = function(x)
     return Result
 end
 local Calligraph = {
-    Version = '1.4.5',
+    Version = '1.4.6',
 }
 local JSONLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return, FunctionPath)
@@ -839,7 +840,13 @@ local function FormatInstancePath(Instance: Instance): string
 
         setthreadcontext(8)
 
-        local NilInstanceString = `<Nil Instance | Name: {Instance.Name} | ClassName: {Instance.ClassName}>`
+        local NilInstanceString = `<Nil Instance {Instance.ClassName}`
+
+        if shared.UseDebugId then
+            NilInstanceString ..= ` | DebugId: {Instance:GetDebugId()}`
+        else
+            NilInstanceString ..= ` | Name: {Instance.Name}>`
+        end
 
         setthreadcontext(OldContext)
 
@@ -1031,6 +1038,7 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
     end
 
     shared.Prettify = (Configuration.PrettyPrint == true)
+    shared.UseDebugId = (Configuration.ShowDebugIdForNilInstancesInsteadOfName == true)
 
     local Session: Session
     local LogFormatter: LogConstructorSet = (Configuration.LogAsCode == true) and CodeLogConstructors or JSONLogConstructors

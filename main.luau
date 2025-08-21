@@ -22,6 +22,7 @@ type SessionConfiguration = {
 	LuraphCompatibility    : boolean?, -- Enable Luraph compatibility mode? (Defaults to false)
 	FilterInstanceIndex    : boolean?, -- Filter out instance index calls? (Defaults to false)
 	PrettyPrint            : boolean?, -- Enable pretty printing of logs? (Defaults to true)
+	ShowDebugIdForNilInstancesInsteadOfName : boolean?, -- Show DebugId for nil instances instead of their name? (Defaults to true)
 }
 
 local DefaultSessionConfiguration: SessionConfiguration = {
@@ -31,6 +32,7 @@ local DefaultSessionConfiguration: SessionConfiguration = {
 	LuraphCompatibility = false,
 	FilterInstanceIndex = false,
 	PrettyPrint = true,
+	ShowDebugIdForNilInstancesInsteadOfName = true,
 }
 
 type LogConstructorSet = {
@@ -91,7 +93,7 @@ end
 --#region Module
 
 local Calligraph = {
-	Version = "1.4.5",
+	Version = "1.4.6",
 }
 
 -- Log Constructors for the JSON format
@@ -159,7 +161,14 @@ local function FormatInstancePath(Instance: Instance): string
 		-- return `nil...{Instance.Name}`
 		local OldContext = getthreadcontext()
 		setthreadcontext(8)
-		local NilInstanceString = `<Nil Instance | Name: {Instance.Name} | ClassName: {Instance.ClassName}>`
+		local NilInstanceString = `<Nil Instance {Instance.ClassName}`
+
+		if shared.UseDebugId then
+			NilInstanceString ..= ` | DebugId: {Instance:GetDebugId()}`
+		else
+			NilInstanceString ..= ` | Name: {Instance.Name}>`
+		end
+
 		setthreadcontext(OldContext)
 		return NilInstanceString
 	end
@@ -357,6 +366,7 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 	end
 
 	shared.Prettify = (Configuration.PrettyPrint == true)
+	shared.UseDebugId = (Configuration.ShowDebugIdForNilInstancesInsteadOfName == true)
 
 	local Session: Session
 	local LogFormatter: LogConstructorSet = (Configuration.LogAsCode == true) and CodeLogConstructors
