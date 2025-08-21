@@ -100,7 +100,7 @@ end
 --#region Module
 
 local Calligraph = {
-	Version = "1.5.3",
+	Version = "1.5.4",
 }
 
 -- Log Constructors for the JSON format
@@ -380,9 +380,9 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 	local RepeatCount: number = 0
 
 	local GameMetamethods = {
-		[HookMgr.GameMT.__index] = true,
-		[HookMgr.GameMT.__newindex] = true,
-		[HookMgr.GameMT.__namecall] = true
+		[HookMgr.GameMT.__index] = "__index",
+		[HookMgr.GameMT.__newindex] = "__newindex",
+		[HookMgr.GameMT.__namecall] = "__namecall"
 	}
 
 	local function WriteToBuffer(FormattedLog: string)
@@ -494,6 +494,82 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 	Session.Log("Targets: " .. table.concat(Session.Targets, ", "))
 	Session.Log(`Log format: {Session.Configuration.LogAsCode and "Luau Code" or "JSON"}`)
 	Session.Log("[SYSTEM] Calligraph is now active. All logs will be recorded.")
+
+	if Session.Configuration.LogMetamethodFunctionFetches then
+		shared.DirectCall.DebugInfo = HookMgr.RegisterHook(`Calligraph:{Session.GUID}:MetamethodFunctionFetch`, getrenv().debug.info, function(Old, ...)
+			if checkcaller() then
+				return Old(...)
+			end
+
+			local Args = table.pack(...)
+			if Args.n ~= 2 then
+				return Old(...)
+			end
+
+			if typeof(Args[1]) == 'number' and typeof(Args[2]) == 'string' and Args[2]:match("f") then
+
+				-- stack visualization of debug.info call:
+				-- 1. current level
+				-- 2. hook wrapper [Added by hook]
+				-- 3. pcall inside GetReturnData [Added by hook]
+				-- 4. function call to GetReturnData [Added by hook]
+				-- 5. cclosure wrapper [Added by hook]
+				-- 6. original function call
+
+				-- our hook adds 4 stack levels, so we need to offset the number.
+
+				-- function Utils.GetReturnData(Function : (...any?) -> (...any?), ...)
+				-- 	local Results = table.pack(pcall(Function, ...))
+				-- 	local ArgsN = Results.n - 1
+					
+				-- 	-- Remove Args.n now
+				-- 	if Results.n then
+				-- 		Results.n = nil
+				-- 	end
+				--
+				-- 	return table.remove(Results, 1), Results, ArgsN
+				-- end
+
+				local Success, Return, ReturnN = Utils.GetReturnData(Old, Args[1] + 4, Args[2])
+
+				if not Success then
+					return Old(...)
+				end
+
+				local ModifiedArgs = {}
+				
+				for i = 1, ReturnN do
+					local Value = Return[i]
+					ModifiedArgs[i] = Value
+
+					-- print('[dbg] Checking if debug.info return value is a metamethod', Value)
+
+					if 
+						typeof(Value) == "function" and
+						iscclosure(Value) and
+						GameMetamethods[Value]
+					then
+						-- print('[dbg] Found metamethod function:', Value)
+						task.spawn(Session.Log, string.format("[!!!] Raw %s function fetched: %s", GameMetamethods[Value], tostring(Value)))
+						if Session.Configuration.MetaMethodFunctionFetchTrap then
+							-- print('[dbg] Returning trap instead of metamethod function')
+							ModifiedArgs[i] = newcclosure(function()
+								print("[Calligraph] Metamethod trap triggered!")
+								task.spawn(Session.Log, string.format("[!!!] Metamethod trap triggered! Method: %s, Traceback: %s", GameMetamethods[Value], debug.traceback()))
+								return coroutine.yield()
+							end)
+						end
+					end
+				end
+
+				return table.unpack(ModifiedArgs, 1, ReturnN)
+			end
+			
+			return Old(...) -- doublecall but whatever i cant be assed to recreate the errors
+		end)
+
+		DebugInfo = shared.DirectCall.DebugInfo.Original
+	end
 
 	if Session.Configuration.LogMetamethods then
 		shared.DirectCall.__index = HookMgr.RegisterHook(
@@ -646,70 +722,6 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 		end
 
 		ScanAndHookWhitelisted(getrenv())
-	end
-
-	if Session.Configuration.LogMetamethodFunctionFetches then
-		shared.DirectCall.DebugInfo = HookMgr.RegisterHook(`Calligraph:{Session.GUID}:MetamethodFunctionFetch`, getrenv().debug.info, function(Old, ...)
-			if checkcaller() then
-				return Old(...)
-			end
-
-			local Args = table.pack(...)
-			if Args.n ~= 2 then
-				return Old(...)
-			end
-
-			if typeof(Args[1]) == 'number' and typeof(Args[2]) == 'string' and Args[2]:match("f") then
-
-				-- stack visualization of debug.info call:
-				-- 1. current level
-				-- 2. hook wrapper [Added by hook]
-				-- 3. pcall inside GetReturnData [Added by hook]
-				-- 4. function call to GetReturnData [Added by hook]
-				-- 5. cclosure wrapper [Added by hook]
-				-- 6. original function call
-
-				-- our hook adds 4 stack levels, so we need to offset the number.
-
-				-- function Utils.GetReturnData(Function : (...any?) -> (...any?), ...)
-				-- 	local Results = table.pack(pcall(Function, ...))
-				-- 	local ArgsN = Results.n - 1
-					
-				-- 	-- Remove Args.n now
-				-- 	if Results.n then
-				-- 		Results.n = nil
-				-- 	end
-				--
-				-- 	return table.remove(Results, 1), Results, ArgsN
-				-- end
-
-				local Success, Return, ReturnN = Utils.GetReturnData(Old, Args[1] + 4, Args[2])
-
-				if not Success then
-					return Old(...)
-				end
-				
-				for i = 1, ReturnN do
-					local Value = Return[i]
-
-					if 
-						typeof(Value) == "function" and
-						iscclosure(Value) and
-						GameMetamethods[Return]
-					then
-						task.spawn(Session.Log, string.format("[!!!] Raw metamethod function fetched: %s", tostring(Value)))
-						if Session.Configuration.MetaMethodFunctionFetchTrap then
-							return coroutine.yield()	
-						end
-					end
-				end
-			end
-			
-			-- return table.unpack(Return, 1, ReturnN) -- non valid data due to extra stack levels so when implemented, please remove this comment
-			return Old(...) -- doublecall but whatever i cant be assed to recreate the errors
-		end)
-
-		DebugInfo = shared.DirectCall.DebugInfo.Original
 	end
 
 	return Session
