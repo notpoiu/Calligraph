@@ -745,7 +745,7 @@ shared.DirectCall = {}
 
 local MAX_BUFFER_SIZE = 1024 * 1024 * 1024
 
-type SessionConfiguration = {LogEnvironment: boolean, LogMetamethods: boolean, LogAsCode: boolean?, LuraphCompatibility: boolean?, FilterInstanceIndex: boolean?, PrettyPrint: boolean?, ShowDebugIdForNilInstancesInsteadOfName: boolean?}
+type SessionConfiguration = {LogEnvironment: boolean, LogMetamethods: boolean, LogAsCode: boolean?, LuraphCompatibility: boolean?, FilterInstanceIndex: boolean?, PrettyPrint: boolean?, ShowDebugIdForNilInstancesInsteadOfName: boolean?, LogMetamethodFunctionFetches: boolean?}
 
 local DefaultSessionConfiguration: SessionConfiguration = {
     LogEnvironment = true,
@@ -786,7 +786,7 @@ local LuaEncode = function(x)
     return Result
 end
 local Calligraph = {
-    Version = '1.4.7',
+    Version = '1.4.8',
 }
 local JSONLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return, FunctionPath)
@@ -1052,6 +1052,11 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
     local LogFormatter: LogConstructorSet = (Configuration.LogAsCode == true) and CodeLogConstructors or JSONLogConstructors
     local LastLogContent: string = ''
     local RepeatCount: number = 0
+    local GameMetamethods = {
+        [HookMgr.GameMT.__index] = true,
+        [HookMgr.GameMT.__newindex] = true,
+        [HookMgr.GameMT.__namecall] = true,
+    }
 
     local function WriteToBuffer(FormattedLog: string)
         if Session.Written + #FormattedLog > MAX_BUFFER_SIZE then
@@ -1317,6 +1322,28 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
         end
 
         ScanAndHookWhitelisted(getrenv())
+    end
+    if Session.Configuration.LogMetamethodFunctionFetches then
+        HookMgr.RegisterHook(`Calligraph:{Session.GUID}:MetamethodFunctionFetch`, getrenv().debug.info, function(
+            Old,
+            ...
+        )
+            local Success, Return, _ = Utils.GetReturnData(Old, ...)
+
+            if Success then
+                if #Return == 1 then
+                    local Value = Return[1]
+
+                    if typeof(Value) == 'function' and iscclosure(Value) then
+                        if GameMetamethods[Return] then
+                            Session.Log(string.format('[!!!] Raw metamethod function fetched: %s', tostring(Value)))
+                        end
+                    end
+                end
+            end
+
+            return Old(...)
+        end)
     end
 
     return Session
