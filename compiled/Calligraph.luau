@@ -744,7 +744,7 @@ type Session = {Configuration: SessionConfiguration, Targets: {string}, Data: bu
 
 local HttpService = game:GetService('HttpService')
 local LuaEncodeAndEvaluateInstancePath = __DARKLUA_BUNDLE_MODULES.load('a')
-local LuaEncode, EvaluateInstancePath = LuaEncodeAndEvaluateInstancePath.LuaEncode, LuaEncodeAndEvaluateInstancePath.EvaluateInstancePath
+local LuaEncodeCore, EvaluateInstancePath = LuaEncodeAndEvaluateInstancePath.LuaEncode, LuaEncodeAndEvaluateInstancePath.EvaluateInstancePath
 local HookMgr = __DARKLUA_BUNDLE_MODULES.load('b')
 local Utils = __DARKLUA_BUNDLE_MODULES.load('c')
 local JSONEncode = function(...): string
@@ -753,6 +753,11 @@ local JSONEncode = function(...): string
     else
         return HttpService:JSONEncode(...)
     end
+end
+local LuaEncode = function(x)
+    return LuaEncodeCore(x, {
+        Prettify = shared.Prettify,
+    })
 end
 local Calligraph = {
     Version = '1.3.6',
@@ -922,6 +927,8 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
             Configuration[Key] = Value
         end
     end
+
+    shared.Prettify = (Configuration.PrettyPrint == true)
 
     local Session: Session
     local LogFormatter: LogConstructorSet = (Configuration.LogAsCode == true) and CodeLogConstructors or JSONLogConstructors

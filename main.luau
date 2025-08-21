@@ -60,7 +60,7 @@ type Session = {
 
 local HttpService = game:GetService("HttpService")
 local LuaEncodeAndEvaluateInstancePath = require("./modules/LuaEncode.luau")
-local LuaEncode, EvaluateInstancePath =
+local LuaEncodeCore, EvaluateInstancePath =
 	LuaEncodeAndEvaluateInstancePath.LuaEncode, LuaEncodeAndEvaluateInstancePath.EvaluateInstancePath
 -- this is so bad but wtv i just need it to work
 local HookMgr = require("./modules/HookMgr.luau")
@@ -72,6 +72,8 @@ local JSONEncode = function(...): string
 		return HttpService:JSONEncode(...)
 	end
 end
+
+local LuaEncode = function(x) return LuaEncodeCore(x, { Prettify = shared.Prettify }) end
 
 --#endregion
 
@@ -251,6 +253,8 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 			Configuration[Key] = Value
 		end
 	end
+
+	shared.Prettify = (Configuration.PrettyPrint == true)
 
 	local Session: Session
 	local LogFormatter: LogConstructorSet = (Configuration.LogAsCode == true) and CodeLogConstructors
