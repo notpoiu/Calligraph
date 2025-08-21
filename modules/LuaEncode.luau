@@ -126,9 +126,15 @@ local EvaluateInstancePath do
     function EvaluateInstancePath(object)
         local ObjectPointer = object
 
+        if object == game then
+            return "game"
+        elseif object == workspace then
+            return "workspace"
+        end
+
         -- Input itself doesn't exist?
         if not ObjectPointer then
-            return
+            return "nil"
         end
 
         local Path = ""
@@ -163,7 +169,7 @@ local EvaluateInstancePath do
         end
 
         -- Fall back to no ret.. Only objects parented under game/workspace will be serialized
-        return
+        return "<Unknown Instance>"
     end
 end
 

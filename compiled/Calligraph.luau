@@ -140,8 +140,13 @@ do
             function EvaluateInstancePath(object)
                 local ObjectPointer = object
 
+                if object == game then
+                    return 'game'
+                elseif object == workspace then
+                    return 'workspace'
+                end
                 if not ObjectPointer then
-                    return
+                    return 'nil'
                 end
 
                 local Path = ''
@@ -171,7 +176,7 @@ do
                     ObjectPointer = ObjectParent
                 end
 
-                return
+                return '<Unknown Instance>'
             end
         end
 
@@ -772,7 +777,7 @@ local LuaEncode = function(x)
     return Result
 end
 local Calligraph = {
-    Version = '1.4.1',
+    Version = '1.4.2',
 }
 local JSONLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return, FunctionPath)

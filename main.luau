@@ -91,7 +91,7 @@ end
 --#region Module
 
 local Calligraph = {
-	Version = "1.4.1",
+	Version = "1.4.2",
 }
 
 -- Log Constructors for the JSON format
