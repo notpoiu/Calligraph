@@ -73,14 +73,21 @@ local JSONEncode = function(...): string
 	end
 end
 
-local LuaEncode = function(x) return LuaEncodeCore(x, { Prettify = shared.Prettify }) end
+local LuaEncode = function(x)
+	return LuaEncodeCore(
+		x,
+		{
+			Prettify = shared.Prettify
+		}
+	)
+end
 
 --#endregion
 
 --#region Module
 
 local Calligraph = {
-	Version = "1.3.6",
+	Version = "1.3.7",
 }
 
 -- Log Constructors for the JSON format
