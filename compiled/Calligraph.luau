@@ -773,6 +773,7 @@ local LuaEncodeAndEvaluateInstancePath = __DARKLUA_BUNDLE_MODULES.load('a')
 local LuaEncodeCore, EvaluateInstancePath = LuaEncodeAndEvaluateInstancePath.LuaEncode, LuaEncodeAndEvaluateInstancePath.EvaluateInstancePath
 local HookMgr = __DARKLUA_BUNDLE_MODULES.load('b')
 local Utils = __DARKLUA_BUNDLE_MODULES.load('c')
+local DebugInfo = getrenv and getrenv().debug.info or debug.info
 local JSONEncode = function(...): string
     if shared.DirectCall.__namecall then
         return shared.DirectCall.__namecall(HttpService, 'JSONEncode', ...)
@@ -801,7 +802,7 @@ local JSONLogConstructors: LogConstructorSet = {
         return JSONEncode({
             Time = os.clock(),
             Type = 'FunctionCall',
-            Name = FunctionPath or debug.info(Function, 'n') or tostring(Function),
+            Name = FunctionPath or DebugInfo(Function, 'n') or tostring(Function),
             Args = LuaEncode(Args),
             Return = LuaEncode(Return),
         })
@@ -874,7 +875,7 @@ end
 
 local CodeLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return, FunctionPath)
-        local FunctionName = FunctionPath or debug.info(Function, 'n') or `<Anonymous {tostring(Function)}>`
+        local FunctionName = FunctionPath or DebugInfo(Function, 'n') or `<Anonymous {tostring(Function)}>`
 
         return string.format('%s(%s) --> %s', FunctionName, FormatCodeArgs(Args), LuaEncode(Return))
     end,
@@ -1023,7 +1024,7 @@ function Calligraph.NewFunctionProxy(
             return Old(...)
         end
 
-        local CallSource = debug.info(4, 's')
+        local CallSource = DebugInfo(4, 's')
 
         if not table.find(Session.Targets, CallSource) then
             return Old(...)
@@ -1207,7 +1208,7 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
                 return Old(Self, Index)
             end
 
-            local CallSource = debug.info(4, 's')
+            local CallSource = DebugInfo(4, 's')
 
             if not table.find(Session.Targets, CallSource) then
                 return Old(Self, Index)
@@ -1240,7 +1241,7 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
                 return Old(Self, Index, Value)
             end
 
-            local CallSource = debug.info(4, 's')
+            local CallSource = DebugInfo(4, 's')
 
             if not table.find(Session.Targets, CallSource) then
                 return Old(Self, Index, Value)
@@ -1261,7 +1262,7 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
                 return Old(Self, ...)
             end
 
-            local CallSource = debug.info(4, 's')
+            local CallSource = DebugInfo(4, 's')
 
             if not table.find(Session.Targets, CallSource) then
                 return Old(Self, ...)
@@ -1332,7 +1333,7 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
         ScanAndHookWhitelisted(getrenv())
     end
     if Session.Configuration.LogMetamethodFunctionFetches then
-        HookMgr.RegisterHook(`Calligraph:{Session.GUID}:MetamethodFunctionFetch`, getrenv().debug.info, function(
+        shared.DirectCall.DebugInfo = HookMgr.RegisterHook(`Calligraph:{Session.GUID}:MetamethodFunctionFetch`, getrenv().debug.info, function(
             Old,
             ...
         )
@@ -1340,28 +1341,27 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
                 return Old(...)
             end
 
-            local Success, Return, _ = Utils.GetReturnData(Old, ...)
+            local Success, Return, ReturnN = Utils.GetReturnData(Old, ...)
 
-            if Success then
-                if #Return == 1 then
-                    local Value = Return[1]
+            if not Success then
+                return Old(...)
+            end
 
-                    if typeof(Value) == 'function' and iscclosure(Value) then
-                        if GameMetamethods[Return] then
-                            task.spawn(function()
-                                Session.Log(string.format('[!!!] Raw metamethod function fetched: %s', tostring(Value)))
-                            end)
+            for i = 1, ReturnN do
+                local Value = Return[i]
 
-                            if Session.Configuration.MetaMethodFunctionFetchTrap then
-                                return coroutine.yield()
-                            end
-                        end
+                if typeof(Value) == 'function' and iscclosure(Value) and GameMetamethods[Return] then
+                    task.spawn(Session.Log, string.format('[!!!] Raw metamethod function fetched: %s', tostring(Value)))
+
+                    if Session.Configuration.MetaMethodFunctionFetchTrap then
+                        return coroutine.yield()
                     end
                 end
             end
 
             return Old(...)
         end)
+        DebugInfo = shared.DirectCall.DebugInfo.Original
     end
 
     return Session

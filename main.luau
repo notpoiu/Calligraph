@@ -71,6 +71,9 @@ local LuaEncodeCore, EvaluateInstancePath =
 -- this is so bad but wtv i just need it to work
 local HookMgr = require("./modules/HookMgr.luau")
 local Utils = require("./modules/Utils.luau")
+
+local DebugInfo = getrenv and getrenv().debug.info or debug.info
+
 local JSONEncode = function(...): string
 	if shared.DirectCall.__namecall then
 		return shared.DirectCall.__namecall(HttpService, "JSONEncode", ...)
@@ -106,7 +109,7 @@ local JSONLogConstructors: LogConstructorSet = {
 		return JSONEncode({
 			Time = os.clock(),
 			Type = "FunctionCall",
-			Name = FunctionPath or debug.info(Function, "n") or tostring(Function),
+			Name = FunctionPath or DebugInfo(Function, "n") or tostring(Function),
 			Args = LuaEncode(Args),
 			Return = LuaEncode(Return),
 		})
@@ -180,7 +183,7 @@ end
 
 local CodeLogConstructors: LogConstructorSet = {
 	FunctionCall = function(Function, Args, Return, FunctionPath)
-		local FunctionName = FunctionPath or debug.info(Function, 'n') or `<Anonymous {tostring(Function)}>`
+		local FunctionName = FunctionPath or DebugInfo(Function, 'n') or `<Anonymous {tostring(Function)}>`
 		return string.format("%s(%s) --> %s", FunctionName, FormatCodeArgs(Args), LuaEncode(Return))
 	end,
 	Namecall = function(Instance, Method, Args, Return)
@@ -335,7 +338,7 @@ function Calligraph.NewFunctionProxy(
 			return Old(...)
 		end
 
-		local CallSource = debug.info(4, "s")
+		local CallSource = DebugInfo(4, "s")
 		-- print('log', Old, ...)
 
 		if not table.find(Session.Targets, CallSource) then
@@ -501,7 +504,7 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 					return Old(Self, Index)
 				end
 
-				local CallSource = debug.info(4, "s")
+				local CallSource = DebugInfo(4, "s")
 
 				if not table.find(Session.Targets, CallSource) then
 					return Old(Self, Index)
@@ -535,7 +538,7 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 					return Old(Self, Index, Value)
 				end
 
-				local CallSource = debug.info(4, "s")
+				local CallSource = DebugInfo(4, "s")
 
 				if not table.find(Session.Targets, CallSource) then
 					return Old(Self, Index, Value)
@@ -557,7 +560,7 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 					return Old(Self, ...)
 				end
 
-				local CallSource = debug.info(4, "s")
+				local CallSource = DebugInfo(4, "s")
 
 				if not table.find(Session.Targets, CallSource) then
 					return Old(Self, ...)
@@ -646,31 +649,40 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 	end
 
 	if Session.Configuration.LogMetamethodFunctionFetches then
-		HookMgr.RegisterHook(`Calligraph:{Session.GUID}:MetamethodFunctionFetch`, getrenv().debug.info, function(Old, ...)
+		shared.DirectCall.DebugInfo = HookMgr.RegisterHook(`Calligraph:{Session.GUID}:MetamethodFunctionFetch`, getrenv().debug.info, function(Old, ...)
 			if checkcaller() then
 				return Old(...)
 			end
-			
-			local Success, Return, _ = Utils.GetReturnData(Old, ...)
 
-			if Success then
-				if #Return == 1 then
-					local Value = Return[1]
-					if typeof(Value) == "function" and iscclosure(Value) then
-						if GameMetamethods[Return] then
-							task.spawn(function()
-								Session.Log(string.format("[!!!] Raw metamethod function fetched: %s", tostring(Value)))
-							end)
-							if Session.Configuration.MetaMethodFunctionFetchTrap then
-								return coroutine.yield()	
-							end
-						end
+			-- This dosent take into account the extra stack levels that are added by calling the function and using pcall in it.
+			-- TODO: Fix not taking into account the extra stack levels added by function calls
+			-- Extra stack depth = 2 (function call to GetReturnData) + 1 (pcall inside GetReturnData) atleast i think
+			local Success, Return, ReturnN = Utils.GetReturnData(Old, ...)
+
+			if not Success then
+				return Old(...)
+			end
+			
+			for i = 1, ReturnN do
+				local Value = Return[i]
+
+				if 
+					typeof(Value) == "function" and
+					iscclosure(Value) and
+					GameMetamethods[Return]
+				then
+					task.spawn(Session.Log, string.format("[!!!] Raw metamethod function fetched: %s", tostring(Value)))
+					if Session.Configuration.MetaMethodFunctionFetchTrap then
+						return coroutine.yield()	
 					end
 				end
 			end
 			
+			-- return table.unpack(Return, 1, ReturnN) -- non valid data due to extra stack levels so when implemented, please remove this comment
 			return Old(...) -- doublecall but whatever i cant be assed to recreate the errors
 		end)
+
+		DebugInfo = shared.DirectCall.DebugInfo.Original
 	end
 
 	return Session
