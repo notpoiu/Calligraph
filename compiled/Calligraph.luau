@@ -847,7 +847,7 @@ end
 
 local CodeLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return, FunctionPath)
-        local FunctionName = FunctionPath or debug.info(Function, 'n') or 'anonymous_function'
+        local FunctionName = FunctionPath or debug.info(Function, 'n') or `<Anonymous {tostring(Function)}>`
 
         return string.format('%s(%s) --> %s', FunctionName, FormatCodeArgs(Args), LuaEncode(Return))
     end,
