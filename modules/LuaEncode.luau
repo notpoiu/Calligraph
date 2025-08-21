@@ -169,7 +169,7 @@ local EvaluateInstancePath do
         end
 
         -- Fall back to no ret.. Only objects parented under game/workspace will be serialized
-        return "<Unknown Instance>"
+        return `<Nil Instance | Name: {object.Name} | ClassName: {object.ClassName}>`
     end
 end
 

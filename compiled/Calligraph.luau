@@ -176,7 +176,7 @@ do
                     ObjectPointer = ObjectParent
                 end
 
-                return '<Unknown Instance>'
+                return `<Nil Instance | Name: {object.Name} | ClassName: {object.ClassName}>`
             end
         end
 
@@ -777,7 +777,7 @@ local LuaEncode = function(x)
     return Result
 end
 local Calligraph = {
-    Version = '1.4.2',
+    Version = '1.4.3',
 }
 local JSONLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return, FunctionPath)
@@ -839,8 +839,7 @@ local function FormatInstancePath(Instance: Instance): string
 
         setthreadcontext(8)
 
-        local _, UniqueId = pcall(gethiddenproperty, Instance, 'UniqueId')
-        local NilInstanceString = `<Nil Instance | Name: {Instance.Name} | UniqueId: {UniqueId}>`
+        local NilInstanceString = `<Nil Instance | Name: {Instance.Name} | ClassName: {Instance.ClassName}>`
 
         setthreadcontext(OldContext)
 
@@ -873,7 +872,7 @@ local CodeLogConstructors: LogConstructorSet = {
         return string.format('%s.%s --> %s', FormatInstancePath(Instance), Key, LuaEncode(Return))
     end,
     NewIndex = function(Instance, Key, Value)
-        return string.format('%s.%s = %s', FormatInstancePath(Instance), Key, LuaEncode({Value}))
+        return string.format('%s.%s = %s', FormatInstancePath(Instance), Key, FormatCodeArgs({Value}))
     end,
 }
 
