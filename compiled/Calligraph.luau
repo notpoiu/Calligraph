@@ -15,639 +15,6 @@ __DARKLUA_BUNDLE_MODULES = {
 
 do
     function __DARKLUA_BUNDLE_MODULES.a()
-        local table, string, next, pcall, game, workspace, tostring, tonumber, getmetatable = table, string, next, pcall, game, workspace, tostring, tonumber, getmetatable
-        local string_format = string.format
-        local string_char = string.char
-        local string_gsub = string.gsub
-        local string_match = string.match
-        local string_rep = string.rep
-        local string_sub = string.sub
-        local string_gmatch = string.gmatch
-        local table_concat = table.concat
-        local Type = typeof or type
-
-        local function LookupTable(array)
-            local Out = {}
-
-            for _, Value in next, array do
-                Out[Value] = true
-            end
-
-            return Out
-        end
-
-        local LuaKeywords = LookupTable({
-            'and',
-            'break',
-            'do',
-            'else',
-            'elseif',
-            'end',
-            'false',
-            'for',
-            'function',
-            'if',
-            'in',
-            'local',
-            'nil',
-            'not',
-            'or',
-            'repeat',
-            'return',
-            'then',
-            'true',
-            'until',
-            'while',
-            'continue',
-        })
-        local KeyIndexTypes = LookupTable({
-            'number',
-            'string',
-            'boolean',
-            'Enum',
-            'EnumItem',
-            'Enums',
-        })
-
-        local function CheckType(inputData, dataName, ...)
-            local ValidTypes = LookupTable({...})
-            local InputType = Type(inputData)
-
-            if not ValidTypes[InputType] then
-                error(string_format('LuaEncode: Incorrect type for `%s`: `%s` expected, got `%s`', dataName, table_concat(ValidTypes, ', '), InputType), 0)
-            end
-
-            return inputData
-        end
-
-        local SerializeString
-
-        do
-            local SpecialCharacters = {
-                ['"'] = '\\"',
-                ['\\'] = '\\\\',
-                ['\a'] = '\\a',
-                ['\b'] = '\\b',
-                ['\t'] = '\\t',
-                ['\n'] = '\\n',
-                ['\v'] = '\\v',
-                ['\f'] = '\\f',
-                ['\r'] = '\\r',
-            }
-
-            for Index = 0, 255 do
-                local Character = string_char(Index)
-
-                if not SpecialCharacters[Character] and (Index < 32 or Index > 126) then
-                    SpecialCharacters[Character] = string_format('\\x%02X', Index)
-                end
-            end
-
-            function SerializeString(inputString)
-                return table_concat({
-                    '"',
-                    string_gsub(inputString, '[%z\\"\1-\31\127-\u{ff}]', SpecialCharacters),
-                    '"',
-                })
-            end
-        end
-
-        local function CommentBlock(inputString)
-            local Padding = ''
-
-            for Match in string_gmatch(inputString, '%](=*)%]')do
-                if #Match >= #Padding then
-                    Padding = Match .. '='
-                end
-            end
-
-            return '--[' .. Padding .. '[' .. inputString .. ']' .. Padding .. ']'
-        end
-
-        local EvaluateInstancePath
-
-        do
-            local function IsService(object)
-                local FindServiceSuccess, ServiceObject = pcall(game.FindService, game, object.ClassName)
-
-                if FindServiceSuccess and ServiceObject then
-                    return true
-                end
-
-                return false
-            end
-
-            function EvaluateInstancePath(object)
-                local ObjectPointer = object
-
-                if object == game then
-                    return 'game'
-                elseif object == workspace then
-                    return 'workspace'
-                end
-                if not ObjectPointer then
-                    return 'nil'
-                end
-
-                local Path = ''
-
-                while ObjectPointer do
-                    local ObjectName = ObjectPointer.Name
-                    local ObjectClassName = ObjectPointer.ClassName
-                    local ObjectParent = ObjectPointer.Parent
-
-                    if ObjectParent == game and IsService(ObjectPointer) then
-                        Path = ':GetService(' .. SerializeString(ObjectClassName) .. ')' .. Path
-                    elseif not LuaKeywords[ObjectName] and string_match(ObjectName, '^[A-Za-z_][A-Za-z0-9_]*$') then
-                        Path = '.' .. ObjectName .. Path
-                    else
-                        Path = '[' .. SerializeString(ObjectName) .. ']' .. Path
-                    end
-                    if ObjectParent == game then
-                        Path = 'game' .. Path
-
-                        return Path
-                    elseif ObjectParent == workspace then
-                        Path = 'workspace' .. Path
-
-                        return Path
-                    end
-
-                    ObjectPointer = ObjectParent
-                end
-
-                local OldThreadContext = getthreadcontext()
-
-                setthreadcontext(8)
-
-                local NilInstanceString = `<{object.ClassName}`
-
-                if shared.UseDebugId then
-                    NilInstanceString ..= ` {object:GetDebugId()}>`
-                else
-                    NilInstanceString ..= ` {object.Name}>`
-                end
-
-                setthreadcontext(OldThreadContext)
-
-                return NilInstanceString
-            end
-        end
-
-        local function LuaEncode(inputTable, options)
-            options = options or {}
-
-            CheckType(inputTable, 'inputTable', 'table')
-            CheckType(options, 'options', 'table')
-            CheckType(options.Prettify, 'options.Prettify', 'boolean', 'nil')
-            CheckType(options.PrettyPrinting, 'options.PrettyPrinting', 'boolean', 'nil')
-            CheckType(options.IndentCount, 'options.IndentCount', 'number', 'nil')
-            CheckType(options.InsertCycles, 'options.InsertCycles', 'boolean', 'nil')
-            CheckType(options.OutputWarnings, 'options.OutputWarnings', 'boolean', 'nil')
-            CheckType(options.FunctionsReturnRaw, 'options.FunctionsReturnRaw', 'boolean', 'nil')
-            CheckType(options.UseInstancePaths, 'options.UseInstancePaths', 'boolean', 'nil')
-            CheckType(options.SerializeMathHuge, 'options.SerializeMathHuge', 'boolean', 'nil')
-            CheckType(options._StackLevel, 'options._StackLevel', 'number', 'nil')
-            CheckType(options._VisitedTables, 'options._VisitedTables', 'table', 'nil')
-
-            local Prettify = (options.Prettify == nil and options.PrettyPrinting == nil and false) or (options.Prettify ~= nil and options.Prettify) or (options.PrettyPrinting and options.PrettyPrinting)
-            local IndentCount = options.IndentCount or (Prettify and 4) or 0
-            local InsertCycles = (options.InsertCycles == nil and false) or options.InsertCycles
-            local OutputWarnings = (options.OutputWarnings == nil and true) or options.OutputWarnings
-            local FunctionsReturnRaw = (options.FunctionsReturnRaw == nil and true) or options.FunctionsReturnRaw
-            local UseInstancePaths = (options.UseInstancePaths == nil and true) or options.UseInstancePaths
-            local SerializeMathHuge = (options.SerializeMathHuge == nil and true) or options.SerializeMathHuge
-            local StackLevel = options._StackLevel or 1
-            local VisitedTables = options._VisitedTables or {}
-            local PositiveInf = (SerializeMathHuge and 'math.huge') or '1/0'
-            local NegativeInf = (SerializeMathHuge and '-math.huge') or '-1/0'
-            local NewEntryString = (Prettify and '\n') or ''
-            local CodegenNewline = (Prettify and '\n') or ' '
-            local ValueSeperator = (Prettify and ', ') or ','
-            local BlankSeperator = (Prettify and ' ') or ''
-            local EqualsSeperator = (Prettify and ' = ') or '='
-            local IndentStringBase = string_rep(' ', IndentCount)
-            local IndentString = nil
-            local EndingIndentString = nil
-            local KeyNumIndex = 1
-            local TypeCases = {}
-
-            do
-                local function TypeCase(typeName, value)
-                    local EncodedValue = TypeCases[typeName](value, false)
-
-                    return EncodedValue
-                end
-                local function Args(...)
-                    local EncodedValues = {}
-
-                    for _, Arg in next, {...}do
-                        EncodedValues[#EncodedValues + 1] = TypeCase(Type(Arg), Arg)
-                    end
-
-                    return table_concat(EncodedValues, ValueSeperator)
-                end
-                local function Params(newData, params)
-                    return 
-[[(function(v, p) for pn, pv in next, p do v[pn] = pv end return v end)(]] .. table_concat({
-                        newData,
-                        TypeCase('table', params),
-                    }, ValueSeperator) .. ')'
-                end
-
-                TypeCases['number'] = function(value, isKey)
-                    if isKey and value == KeyNumIndex then
-                        KeyNumIndex = KeyNumIndex + 1
-
-                        return nil, true
-                    end
-                    if value == 1 / 0 then
-                        return PositiveInf
-                    elseif value == -1 / 0 then
-                        return NegativeInf
-                    end
-
-                    return string_format('%.14g', value)
-                end
-                TypeCases['string'] = function(value, isKey)
-                    if isKey and not LuaKeywords[value] and string_match(value, '^[A-Za-z_][A-Za-z0-9_]*$') then
-                        return value, true
-                    end
-
-                    return SerializeString(value)
-                end
-                TypeCases['table'] = function(value, isKey)
-                    if VisitedTables[value] and OutputWarnings then
-                        return '{--[[LuaEncode: Duplicate reference]]}'
-                    end
-
-                    local NewOptions = setmetatable({}, {__index = options})
-
-                    do
-                        NewOptions.Prettify = (isKey and false) or Prettify
-                        NewOptions.IndentCount = (isKey and ((not Prettify and IndentCount) or 1)) or IndentCount
-                        NewOptions._StackLevel = (isKey and 1) or StackLevel + 1
-                        NewOptions._VisitedTables = VisitedTables
-                    end
-
-                    return LuaEncode(value, NewOptions)
-                end
-                TypeCases['boolean'] = function(value)
-                    return value and 'true' or 'false'
-                end
-                TypeCases['nil'] = function(value)
-                    return 'nil'
-                end
-                TypeCases['function'] = function(value)
-                    if FunctionsReturnRaw then
-                        if debug.info(value, 'n') ~= '' then
-                            return string_format('<%s Name: %s>', tostring(value), debug.info(value, 'n'))
-                        end
-
-                        return string_format('<Anonymous %s>', tostring(value))
-                    end
-
-                    return string_format('function()%sreturn end', (OutputWarnings and 
-[=[ --[[LuaEncode: `options.FunctionsReturnRaw` false; can't serialize functions]] ]=]) or '')
-                end
-                TypeCases['Axes'] = function(value)
-                    local EncodedArgs = {}
-                    local EnumValues = {
-                        ['Enum.Axis.X'] = value.X,
-                        ['Enum.Axis.Y'] = value.Y,
-                        ['Enum.Axis.Z'] = value.Z,
-                    }
-
-                    for EnumValue, IsEnabled in next, EnumValues do
-                        if IsEnabled then
-                            EncodedArgs[#EncodedArgs + 1] = EnumValue
-                        end
-                    end
-
-                    return 'Axes.new(' .. table_concat(EncodedArgs, ValueSeperator) .. ')'
-                end
-                TypeCases['BrickColor'] = function(value)
-                    return 'BrickColor.new(' .. (Prettify and TypeCase('string', value.Name)) or value.Number .. ')'
-                end
-                TypeCases['CFrame'] = function(value)
-                    return 'CFrame.new(' .. Args(value:components()) .. ')'
-                end
-                TypeCases['CatalogSearchParams'] = function(value)
-                    return Params('CatalogSearchParams.new()', {
-                        SearchKeyword = value.SearchKeyword,
-                        MinPrice = value.MinPrice,
-                        MaxPrice = value.MaxPrice,
-                        SortType = value.SortType,
-                        CategoryFilter = value.CategoryFilter,
-                        BundleTypes = value.BundleTypes,
-                        AssetTypes = value.AssetTypes,
-                    })
-                end
-                TypeCases['Color3'] = function(value)
-                    return 'Color3.new(' .. Args(value.R, value.G, value.B) .. ')'
-                end
-                TypeCases['ColorSequence'] = function(value)
-                    return 'ColorSequence.new(' .. TypeCase('table', value.Keypoints) .. ')'
-                end
-                TypeCases['ColorSequenceKeypoint'] = function(value)
-                    return 'ColorSequenceKeypoint.new(' .. Args(value.Time, value.Value) .. ')'
-                end
-                TypeCases['DateTime'] = function(value)
-                    return 'DateTime.fromUnixTimestamp(' .. value.UnixTimestamp .. ')'
-                end
-                TypeCases['DockWidgetPluginGuiInfo'] = function(value)
-                    local ValueString = tostring(value)
-
-                    return 'DockWidgetPluginGuiInfo.new(' .. Args(Enum.InitialDockState[string_match(ValueString, 'InitialDockState:(%w+)')], string_match(ValueString, 'InitialEnabled:(%w+)') == '1', string_match(ValueString, 'InitialEnabledShouldOverrideRestore:(%w+)') == '1', tonumber(string_match(ValueString, 'FloatingXSize:(%w+)')), tonumber(string_match(ValueString, 'FloatingYSize:(%w+)')), tonumber(string_match(ValueString, 'MinWidth:(%w+)')), tonumber(string_match(ValueString, 'MinHeight:(%w+)'))) .. ')'
-                end
-                TypeCases['Enum'] = function(value)
-                    return 'Enum.' .. tostring(value)
-                end
-                TypeCases['EnumItem'] = function(value)
-                    return tostring(value)
-                end
-                TypeCases['Enums'] = function(value)
-                    return 'Enum'
-                end
-                TypeCases['Faces'] = function(value)
-                    local EncodedArgs = {}
-                    local EnumValues = {
-                        ['Enum.NormalId.Top'] = value.Top,
-                        ['Enum.NormalId.Bottom'] = value.Bottom,
-                        ['Enum.NormalId.Left'] = value.Left,
-                        ['Enum.NormalId.Right'] = value.Right,
-                        ['Enum.NormalId.Back'] = value.Back,
-                        ['Enum.NormalId.Front'] = value.Front,
-                    }
-
-                    for EnumValue, IsEnabled in next, EnumValues do
-                        if IsEnabled then
-                            EncodedArgs[#EncodedArgs + 1] = EnumValue
-                        end
-                    end
-
-                    return 'Faces.new(' .. table_concat(EncodedArgs, ValueSeperator) .. ')'
-                end
-                TypeCases['FloatCurveKey'] = function(value)
-                    return 'FloatCurveKey.new(' .. Args(value.Time, value.Value, value.Interpolation) .. ')'
-                end
-                TypeCases['Font'] = function(value)
-                    return 'Font.new(' .. Args(value.Family, value.Weight, value.Style) .. ')'
-                end
-                TypeCases['Instance'] = function(value)
-                    if UseInstancePaths then
-                        local InstancePath = EvaluateInstancePath(value)
-
-                        if InstancePath then
-                            return InstancePath
-                        end
-                    end
-
-                    return 'nil' .. BlankSeperator .. CommentBlock('Instance.new(' .. TypeCase('string', value.ClassName) .. ')')
-                end
-                TypeCases['NumberRange'] = function(value)
-                    return 'NumberRange.new(' .. Args(value.Min, value.Max) .. ')'
-                end
-                TypeCases['NumberSequence'] = function(value)
-                    return 'NumberSequence.new(' .. TypeCase('table', value.Keypoints) .. ')'
-                end
-                TypeCases['NumberSequenceKeypoint'] = function(value)
-                    return 'NumberSequenceKeypoint.new(' .. Args(value.Time, value.Value, value.Envelope) .. ')'
-                end
-                TypeCases['OverlapParams'] = function(value)
-                    return Params('OverlapParams.new()', {
-                        FilterDescendantsInstances = value.FilterDescendantsInstances,
-                        FilterType = value.FilterType,
-                        MaxParts = value.MaxParts,
-                        CollisionGroup = value.CollisionGroup,
-                        RespectCanCollide = value.RespectCanCollide,
-                    })
-                end
-                TypeCases['PathWaypoint'] = function(value)
-                    return 'PathWaypoint.new(' .. Args(value.Position, value.Action, value.Label) .. ')'
-                end
-                TypeCases['PhysicalProperties'] = function(value)
-                    return 'PhysicalProperties.new(' .. Args(value.Density, value.Friction, value.Elasticity, value.FrictionWeight, value.ElasticityWeight) .. ')'
-                end
-                TypeCases['Random'] = function()
-                    return 'Random.new()'
-                end
-                TypeCases['Ray'] = function(value)
-                    return 'Ray.new(' .. Args(value.Origin, value.Direction) .. ')'
-                end
-                TypeCases['RaycastParams'] = function(value)
-                    return Params('RaycastParams.new()', {
-                        FilterDescendantsInstances = value.FilterDescendantsInstances,
-                        FilterType = value.FilterType,
-                        IgnoreWater = value.IgnoreWater,
-                        CollisionGroup = value.CollisionGroup,
-                        RespectCanCollide = value.RespectCanCollide,
-                    })
-                end
-                TypeCases['Rect'] = function(value)
-                    return 'Rect.new(' .. Args(value.Min, value.Max) .. ')'
-                end
-                TypeCases['Region3'] = function(value)
-                    local ValueCFrame = value.CFrame
-                    local ValueSize = value.Size
-
-                    return 'Region3.new(' .. Args(ValueCFrame * CFrame.new(-ValueSize / 2), ValueCFrame * CFrame.new(ValueSize / 2)) .. ')'
-                end
-                TypeCases['Region3int16'] = function(value)
-                    return 'Region3int16.new(' .. Args(value.Min, value.Max) .. ')'
-                end
-                TypeCases['TweenInfo'] = function(value)
-                    return 'TweenInfo.new(' .. Args(value.Time, value.EasingStyle, value.EasingDirection, value.RepeatCount, value.Reverses, value.DelayTime) .. ')'
-                end
-                TypeCases['RotationCurveKey'] = function(value)
-                    return 'RotationCurveKey.new(' .. Args(value.Time, value.Value, value.Interpolation) .. ')'
-                end
-                TypeCases['UDim'] = function(value)
-                    return 'UDim.new(' .. Args(value.Scale, value.Offset) .. ')'
-                end
-                TypeCases['UDim2'] = function(value)
-                    return 'UDim2.new(' .. Args(value.X.Scale, value.X.Offset, value.Y.Scale, value.Y.Offset) .. ')'
-                end
-                TypeCases['Vector2'] = function(value)
-                    return 'Vector2.new(' .. Args(value.X, value.Y) .. ')'
-                end
-                TypeCases['Vector2int16'] = function(value)
-                    return 'Vector2int16.new(' .. Args(value.X, value.Y) .. ')'
-                end
-                TypeCases['Vector3'] = function(value)
-                    return 'Vector3.new(' .. Args(value.X, value.Y, value.Z) .. ')'
-                end
-                TypeCases['Vector3int16'] = function(value)
-                    return 'Vector3int16.new(' .. Args(value.X, value.Y, value.Z) .. ')'
-                end
-                TypeCases['userdata'] = function(value)
-                    if getmetatable(value) ~= nil then
-                        return 'newproxy(true)'
-                    else
-                        return 'newproxy()'
-                    end
-                end
-            end
-
-            local Output = {}
-            local TablePointer = inputTable
-            local NextKey = nil
-            local IsNewTable = true
-            local TableStack = {}
-            local RefMaps = {
-                [TablePointer] = '',
-            }
-            local CycleMaps = {}
-
-            while TablePointer do
-                StackLevel = #TableStack + 1
-                IndentString = (Prettify and string_rep(IndentStringBase, StackLevel)) or IndentStringBase
-                EndingIndentString = (#IndentString > 0 and string_sub(IndentString, 1, 
--IndentCount - 1)) or ''
-
-                if IsNewTable then
-                    Output[#Output + 1] = '{'
-                elseif next(TablePointer, NextKey) == nil then
-                    Output[#Output + 1] = NewEntryString .. EndingIndentString
-                else
-                    Output[#Output + 1] = ','
-                end
-
-                VisitedTables[TablePointer] = true
-
-                local SkipStackPop = false
-
-                for Key, Value in next, TablePointer, NextKey do
-                    local KeyType = Type(Key)
-                    local ValueType = Type(Value)
-                    local ValueIsTable = ValueType == 'table'
-
-                    if TypeCases[KeyType] and TypeCases[ValueType] then
-                        if Prettify then
-                            Output[#Output + 1] = NewEntryString .. IndentString
-                        end
-
-                        local ValueWasEncoded = false
-                        local KeyEncodedSuccess, EncodedKeyOrError, DontEncloseKeyInBrackets = pcall(TypeCases[KeyType], Key, true)
-                        local ValueEncodedSuccess, EncodedValueOrError
-
-                        if not ValueIsTable then
-                            ValueEncodedSuccess, EncodedValueOrError = pcall(TypeCases[ValueType], Value, false)
-                        end
-                        if KeyEncodedSuccess and (ValueIsTable or (ValueEncodedSuccess and EncodedValueOrError)) then
-                            if EncodedKeyOrError then
-                                if DontEncloseKeyInBrackets then
-                                    Output[#Output + 1] = EncodedKeyOrError
-                                else
-                                    Output[#Output + 1] = table_concat({
-                                        '[',
-                                        EncodedKeyOrError,
-                                        ']',
-                                    })
-                                end
-
-                                Output[#Output + 1] = EqualsSeperator
-                            end
-                            if ValueIsTable then
-                                local IndexPath
-
-                                if InsertCycles and KeyIndexTypes[KeyType] and RefMaps[TablePointer] then
-                                    if KeyType == 'string' and not LuaKeywords[Key] and string_match(Key, '^[A-Za-z_][A-Za-z0-9_]*$') then
-                                        IndexPath = '.' .. Key
-                                    else
-                                        local EncodedKeyAsValue = TypeCases[KeyType](Key)
-
-                                        IndexPath = table_concat({
-                                            '[',
-                                            EncodedKeyAsValue,
-                                            ']',
-                                        })
-                                    end
-                                end
-                                if not VisitedTables[Value] then
-                                    if IndexPath then
-                                        RefMaps[Value] = RefMaps[TablePointer] .. IndexPath
-                                    end
-
-                                    TableStack[#TableStack + 1] = {TablePointer, Key, KeyNumIndex}
-                                    TablePointer = Value
-                                    NextKey = nil
-                                    KeyNumIndex = 1
-                                    IsNewTable = true
-                                    SkipStackPop = true
-
-                                    break
-                                else
-                                    EncodedValueOrError = string_format('{%s}', (OutputWarnings and '--[[LuaEncode: Duplicate reference]]') or '')
-
-                                    if IndexPath then
-                                        CycleMaps[IndexPath] = RefMaps[Value]
-                                    end
-                                end
-                            end
-
-                            Output[#Output + 1] = EncodedValueOrError
-                            ValueWasEncoded = true
-                        elseif OutputWarnings then
-                            local ErrorMessage = string_format('LuaEncode: Failed to encode %s of data type %s: %s', (not KeyEncodedSuccess and 'key') or (not ValueEncodedSuccess and 'value') or 'key/value', ValueType, (not KeyEncodedSuccess and SerializeString(EncodedKeyOrError)) or (not ValueEncodedSuccess and SerializeString(EncodedValueOrError)) or '(Failed to get error message)')
-
-                            Output[#Output + 1] = CommentBlock(ErrorMessage)
-                        end
-                        if next(TablePointer, Key) == nil then
-                            Output[#Output + 1] = NewEntryString .. EndingIndentString
-                        elseif ValueWasEncoded then
-                            Output[#Output + 1] = ','
-                        end
-                    end
-                end
-
-                if not SkipStackPop then
-                    Output[#Output + 1] = '}'
-
-                    if #TableStack > 0 then
-                        local TableUp = TableStack[#TableStack]
-
-                        TableStack[#TableStack] = nil
-                        TablePointer, NextKey, KeyNumIndex = TableUp[1], TableUp[2], TableUp[3]
-                        IsNewTable = false
-                    else
-                        break
-                    end
-                end
-            end
-
-            if InsertCycles then
-                local CycleMapsOut = {}
-
-                for CycleIndex, CycleMap in next, CycleMaps do
-                    CycleMapsOut[#CycleMapsOut + 1] = IndentString .. 't' .. CycleIndex .. EqualsSeperator .. 't' .. CycleMap .. CodegenNewline
-                end
-
-                if #CycleMapsOut > 0 then
-                    return table_concat({
-                        '(function(t)',
-                        NewEntryString,
-                        table_concat(CycleMapsOut),
-                        NewEntryString,
-                        IndentString,
-                        'return t',
-                        CodegenNewline,
-                        'end)(',
-                        table_concat(Output),
-                        ')',
-                    })
-                end
-            end
-
-            return table_concat(Output)
-        end
-
-        return {
-            LuaEncode = LuaEncode,
-            EvaluateInstancePath = EvaluateInstancePath,
-        }
-    end
-    function __DARKLUA_BUNDLE_MODULES.b()
         local HookMgr = {
             Registry = {},
             GameMT = {
@@ -729,7 +96,7 @@ do
 
         return HookMgr
     end
-    function __DARKLUA_BUNDLE_MODULES.c()
+    function __DARKLUA_BUNDLE_MODULES.b()
         local Utils = {}
 
         function Utils.GetReturnData(Function: (...any?) -> (...any?), ...)
@@ -745,34 +112,1165 @@ do
 
         return Utils
     end
+    function __DARKLUA_BUNDLE_MODULES.c()
+        local assert, type, typeof, rawset, getmetatable, tostring = assert, type, typeof, rawset, getmetatable, tostring
+        local print, warn, pack, unpack, next = print, warn, table.pack, unpack, next
+        local IsSharedFrozen, SharedSize = SharedTable.isFrozen, SharedTable.size
+        local bufftostring, fromstring, readu8 = buffer.tostring, buffer.fromstring, buffer.readu8
+        local isfrozen, concat = table.isfrozen, table.concat
+        local info = debug.info
+        local DefaultMethods = {}
+        local Methods = setmetatable({}, {__index = DefaultMethods})
+        local Class = {
+            Methods = Methods,
+            _tostringUnsupported = false,
+            _Serializeinf = false,
+            __VERSION = '1.0',
+        }
+        local Keywords = {
+            ['local'] = '"local"',
+            ['function'] = '"function"',
+            ['and'] = '"and"',
+            ['break'] = '"break"',
+            ['not'] = '"not"',
+            ['or'] = '"or"',
+            ['else'] = '"else"',
+            ['elseif'] = '"elseif"',
+            ['if'] = '"if"',
+            ['then'] = '"then"',
+            ['until'] = '"until"',
+            ['repeat'] = '"repeat"',
+            ['while'] = '"while"',
+            ['do'] = '"do"',
+            ['for'] = '"for"',
+            ['in'] = '"in"',
+            ['end'] = '"end"',
+            ['return'] = '"return"',
+            ['true'] = '"true"',
+            ['false'] = '"false"',
+            ['nil'] = '"nil"',
+        }
+        local weakkeys = {
+            __mode = 'k',
+        }
+        local islclosure = islclosure or function<func>(Function: func)
+            return info(Function, 'l') ~= -1
+        end
+        local DefaultVectors, DefaultCFrames = {}, {}
+
+        do
+            local function ExtractTypes<Library>(
+                DataTypeLibrary: Library,
+                Path: string,
+                DataType: string,
+                Storage: {[any]: string}
+            )
+                for i, v in next, DataTypeLibrary do
+                    if typeof(v) == DataType and not Storage[v] and type(i) == 'string' and not Keywords[i] or not i:match('[a-Z_][a-Z_0-9]') then
+                        Storage[v] = Path .. '.' .. i
+                    end
+                end
+            end
+
+            ExtractTypes(vector, 'vector', 'Vector3', DefaultVectors)
+            ExtractTypes(Vector3, 'Vector3', 'Vector3', DefaultVectors)
+            ExtractTypes(CFrame, 'CFrame', 'CFrame', DefaultCFrames)
+
+            Class.DefaultTypes = {
+                Vector3 = DefaultVectors,
+                CFrame = DefaultCFrames,
+            }
+        end
+
+        local function Serialize<Type>(
+            DataStructure: Type,
+            format: boolean?,
+            indents: string,
+            CyclicList: {[{[any]: any?}]: boolean | nil}?,
+            InComment: boolean?
+        )
+            local DataHandler = Methods[typeof(DataStructure)]
+
+            return if DataHandler then DataHandler(DataStructure, format, indents, CyclicList, InComment)else'nil --[' .. (if InComment then''else'=') .. '[ Unsupported Data Type | ' .. typeof(DataStructure) .. (if not Class._tostringUnsupported then''else' | ' .. tostring(DataStructure)) .. ' ]' .. (if not InComment then''else'=') .. ']'
+        end
+        local function ValidateSharedTableIndex(Index: string)
+            local IsKeyword = if type(Index) == 'number'then Index else Keywords[Index]
+
+            if not IsKeyword then
+                if Index ~= '' then
+                    local IndexBuffer = fromstring(Index)
+                    local FirstByte = readu8(IndexBuffer, 0)
+
+                    if FirstByte >= 97 and FirstByte <= 122 or FirstByte >= 65 and FirstByte <= 90 or FirstByte == 95 then
+                        for i = 1, #Index - 1 do
+                            local Byte = readu8(IndexBuffer, i)
+
+                            if not ((Byte >= 97 and Byte <= 122) or (Byte >= 65 and Byte <= 90) or Byte == 95 or (Byte >= 48 and Byte <= 57)) then
+                                return '[' .. Methods.string(Index) .. '] = '
+                            end
+                        end
+
+                        return Index .. ' = '
+                    end
+
+                    return '[' .. Methods.string(Index) .. '] = '
+                end
+
+                return '[""] = '
+            end
+
+            return '[' .. IsKeyword .. '] = '
+        end
+        local function ValidateIndex(Index: any)
+            local IndexType = type(Index)
+            local IsNumber = IndexType == 'number'
+
+            if IsNumber or IndexType == 'string' then
+                local IsKeyword = if IsNumber then Index else Keywords[Index]
+
+                if not IsKeyword then
+                    if Index ~= '' then
+                        local IndexBuffer = fromstring(Index)
+                        local FirstByte = readu8(IndexBuffer, 0)
+
+                        if FirstByte >= 97 and FirstByte <= 122 or FirstByte >= 65 and FirstByte <= 90 or FirstByte == 95 then
+                            for i = 1, #Index - 1 do
+                                local Byte = readu8(IndexBuffer, i)
+
+                                if not ((Byte >= 97 and Byte <= 122) or (Byte >= 65 and Byte <= 90) or Byte == 95 or (Byte >= 48 and Byte <= 57)) then
+                                    return '[' .. Methods.string(Index) .. '] = '
+                                end
+                            end
+
+                            return Index .. ' = '
+                        end
+
+                        return '[' .. Methods.string(Index) .. '] = '
+                    end
+
+                    return '[""] = '
+                end
+
+                return '[' .. IsKeyword .. '] = '
+            end
+
+            return '[' .. (if IndexType ~= 'table'then Serialize(Index, false, '')else'"<Table> (table: ' .. (if getmetatable(Index) == nil then tostring(Index):sub(8)else'@metatable') .. ')"') .. '] = '
+        end
+
+        function DefaultMethods.Axes(Axes: Axes)
+            return 'Axes.new(' .. concat({
+                if Axes.X then'Enum.Axis.X'else nil,
+                if Axes.Y then'Enum.Axis.Y'else nil,
+                if Axes.Z then'Enum.Axis.Z'else nil,
+            }, ', ') .. ')'
+        end
+        function DefaultMethods.BrickColor(Color: BrickColor)
+            return 'BrickColor.new(' .. Color.Number .. ')'
+        end
+        function DefaultMethods.CFrame(CFrame: CFrame)
+            local Generation = DefaultCFrames[CFrame]
+
+            if not Generation then
+                local x, y, z, R00, R01, R02, R10, R11, R12, R20, R21, R22 = CFrame:GetComponents()
+                local SerializeNumber = Methods.number
+
+                return 'CFrame.new(' .. SerializeNumber(x) .. ', ' .. SerializeNumber(y) .. ', ' .. SerializeNumber(z) .. ', ' .. SerializeNumber(R00) .. ', ' .. SerializeNumber(R01) .. ', ' .. SerializeNumber(R02) .. ', ' .. SerializeNumber(R10) .. ', ' .. SerializeNumber(R11) .. ', ' .. SerializeNumber(R12) .. ', ' .. SerializeNumber(R20) .. ', ' .. SerializeNumber(R21) .. ', ' .. SerializeNumber(R22) .. ')'
+            end
+
+            return Generation
+        end
+
+        do
+            local DefaultCatalogSearchParams = CatalogSearchParams.new()
+
+            function DefaultMethods.CatalogSearchParams(
+                Params: CatalogSearchParams,
+                format: boolean?,
+                indents: string
+            )
+                if DefaultCatalogSearchParams ~= Params then
+                    local formatspace = if format then'\n' .. indents else' '
+                    local SerializeString = Methods.string
+                    local SearchKeyword = Params.SearchKeyword
+                    local MinPrice = Params.MinPrice
+                    local MaxPrice = Params.MaxPrice
+                    local SortType = Params.SortType
+                    local SortAggregation = Params.SortAggregation
+                    local CategoryFilter = Params.CategoryFilter
+                    local SalesTypeFilter = Params.SalesTypeFilter
+                    local BundleTypes = Params.BundleTypes
+                    local AssetTypes = Params.AssetTypes
+                    local CreatorName = Params.CreatorName
+                    local CreatorType = Params.CreatorType
+                    local CreatorId = Params.CreatorId
+                    local Limit = Params.Limit
+
+                    return '(function(Param : CatalogSearchParams)' .. formatspace .. (if SearchKeyword ~= ''then'\tParam.SearchKeyword = ' .. SerializeString(SearchKeyword) .. formatspace else'') .. (if MinPrice ~= 0 then'\tParam.MinPrice = ' .. MinPrice .. formatspace else'') .. (if MaxPrice ~= 2147483647 then'\tParam.MaxPrice = ' .. MaxPrice .. formatspace else'') .. (if SortType ~= Enum.CatalogSortType.Relevance then'\tParam.SortType = Enum.CatalogSortType.' .. SortType.Name .. formatspace else'') .. (if SortAggregation ~= Enum.CatalogSortAggregation.AllTime then'\tParam.SortAggregation = Enum.CatalogSortAggregation.' .. SortAggregation.Name .. formatspace else'') .. (if CategoryFilter ~= Enum.CatalogCategoryFilter.None then'\tParam.CategoryFilter = Enum.CatalogCategoryFilter.' .. CategoryFilter.Name .. formatspace else'') .. (if SalesTypeFilter ~= Enum.SalesTypeFilter.All then'\tParam.SalesTypeFilter = Enum.SalesTypeFilter.' .. SalesTypeFilter.Name .. formatspace else'') .. (if#BundleTypes > 0 then'\tParam.BundleTypes = ' .. Methods.table(BundleTypes, false, '') .. formatspace else'') .. (if#AssetTypes > 0 then'\tParam.AssetTypes = ' .. Methods.table(AssetTypes, false, '') .. formatspace else'') .. (if Params.IncludeOffSale then'\tParams.IncludeOffSale = true' .. formatspace else'') .. (if CreatorName ~= ''then'\tParams.CreatorName = ' .. SerializeString(CreatorName) .. formatspace else'') .. (if CreatorType ~= Enum.CreatorTypeFilter.All then'\tParam.CreatorType = Enum.CreatorTypeFilter.' .. CreatorType.Name .. formatspace else'') .. (if CreatorId ~= 0 then'\tParams.CreatorId = ' .. CreatorId .. formatspace else'') .. (if Limit ~= 30 then'\tParams.Limit = ' .. Limit .. formatspace else'') .. '\treturn Params' .. formatspace .. 'end)(CatalogSearchParams.new())'
+                end
+
+                return 'CatalogSearchParams.new()'
+            end
+        end
+
+        function DefaultMethods.Color3(Color: Color3)
+            local SerializeNumber = Methods.number
+
+            return 'Color3.new(' .. SerializeNumber(Color.R) .. ', ' .. SerializeNumber(Color.G) .. ', ' .. SerializeNumber(Color.B) .. ')'
+        end
+        function DefaultMethods.ColorSequence(Sequence: ColorSequence)
+            local SerializeColorSequenceKeypoint = Methods.ColorSequenceKeypoint
+            local Keypoints = Sequence.Keypoints
+            local Size = #Keypoints
+            local Serialized = ''
+
+            for i = 1, Size - 1 do
+                Serialized ..= SerializeColorSequenceKeypoint(Keypoints[i]) .. ', '
+            end
+
+            return 'ColorSequence.new({' .. Serialized .. SerializeColorSequenceKeypoint(Keypoints[Size]) .. '})'
+        end
+        function DefaultMethods.ColorSequenceKeypoint(KeyPoint: ColorSequenceKeypoint)
+            return 'ColorSequenceKeypoint.new(' .. Methods.number(KeyPoint.Time) .. ', ' .. Methods.Color3(KeyPoint.Value) .. ')'
+        end
+        function DefaultMethods.Content(content: Content)
+            local Uri = content.Uri
+
+            return if Uri then'Content.fromUri(' .. Uri .. ')'else'Content.none'
+        end
+        function DefaultMethods.DateTime(Date: DateTime)
+            return 'DateTime.fromUnixTimestampMillis(' .. Date.UnixTimestampMillis .. ')'
+        end
+        function DefaultMethods.DockWidgetPluginGuiInfo(Dock: DockWidgetPluginGuiInfo)
+            local ArgumentFunction = tostring(Dock):gmatch(':([%w%-]+)')
+
+            return 'DockWidgetPluginGuiInfo.new(Enum.InitialDockState.' .. ArgumentFunction() .. ', ' .. (if ArgumentFunction() == '1'then'true'else'false') .. ', ' .. (if ArgumentFunction() == '1'then'true'else'false') .. ', ' .. ArgumentFunction() .. ', ' .. ArgumentFunction() .. ', ' .. ArgumentFunction() .. ', ' .. ArgumentFunction() .. ')'
+        end
+        function DefaultMethods.Enum(Enum: Enum)
+            return 'Enums.' .. tostring(Enum)
+        end
+
+        do
+            local Enums = {}
+
+            for i, v in Enum:GetEnums()do
+                Enums[v] = 'Enum.' .. tostring(v)
+            end
+
+            function DefaultMethods.EnumItem(Item: EnumItem)
+                return Enums[Item.EnumType] .. '.' .. Item.Name
+            end
+        end
+
+        function DefaultMethods.Enums()
+            return 'Enums'
+        end
+        function DefaultMethods.Faces(Faces: Faces)
+            return 'Faces.new(' .. concat({
+                if Faces.Top then'Enum.NormalId.Top'else nil,
+                if Faces.Bottom then'Enum.NormalId.Bottom'else nil,
+                if Faces.Left then'Enum.NormalId.Left'else nil,
+                if Faces.Right then'Enum.NormalId.Right'else nil,
+                if Faces.Back then'Enum.NormalId.Back'else nil,
+                if Faces.Front then'Enum.NormalId.Front'else nil,
+            }, ', ') .. ')'
+        end
+        function DefaultMethods.FloatCurveKey(CurveKey: FloatCurveKey)
+            local SerializeNumber = Methods.number
+
+            return 'FloatCurveKey.new(' .. SerializeNumber(CurveKey.Time) .. ', ' .. SerializeNumber(CurveKey.Value) .. ', Enum.KeyInterpolationMode.' .. CurveKey.Interpolation.Name .. ')'
+        end
+        function DefaultMethods.Font(Font: Font)
+            return 'Font.new(' .. Methods.string(Font.Family) .. ', Enum.FontWeight.' .. Font.Weight.Name .. ', Enum.FontStyle.' .. Font.Style.Name .. ')'
+        end
+
+        do
+            local Players = game:GetService('Players')
+            local FindService = game.FindService
+            local Services = {
+                Workspace = 'workspace',
+                Lighting = 'game.lighting',
+                GlobalSettings = 'settings()',
+                Stats = 'stats()',
+                UserSettings = 'UserSettings()',
+                PluginManagerInterface = 'PluginManager()',
+                DebuggerManager = 'DebuggerManager()',
+            }
+
+            if game:GetService('RunService'):IsClient() then
+                local LocalPlayer = Players.LocalPlayer
+
+                if not LocalPlayer then
+                    Players:GetPropertyChangedSignal('LocalPlayer'):Once(function(
+                    )
+                        LocalPlayer = Players.LocalPlayer
+                    end)
+                end
+
+                function DefaultMethods.Instance(obj: Instance)
+                    local ObjectParent = obj.Parent
+                    local ObjectClassName = obj.ClassName
+
+                    if ObjectParent then
+                        local ObjectName = Methods.string(obj.Name)
+
+                        if ObjectClassName ~= 'Model' and ObjectClassName ~= 'Player' then
+                            local IsService, Output = pcall(FindService, game, ObjectClassName)
+
+                            return if not (IsService and Output)then Methods.Instance(ObjectParent) .. ':WaitForChild(' .. ObjectName .. ')'else Services[ObjectClassName] or 'game:GetService("' .. ObjectClassName .. '")'
+                        elseif ObjectClassName == 'Model' then
+                            local Player = Players:GetPlayerFromCharacter(obj)
+
+                            return if not Player then Methods.Instance(ObjectParent) .. ':WaitForChild(' .. ObjectName .. ')'else'game:GetService("Players")' .. (if Player == LocalPlayer then'.LocalPlayer.Character'else':WaitForChild(' .. ObjectName .. ').Character')
+                        end
+
+                        return 'game:GetService("Players")' .. (if obj == LocalPlayer then'.LocalPlayer'else':WaitForChild(' .. ObjectName .. ')')
+                    end
+
+                    return if ObjectClassName == 'DataModel'then'game'else'Instance.new("' .. ObjectClassName .. '", nil)'
+                end
+            else
+                function DefaultMethods.Instance(obj: Instance)
+                    local ObjectParent = obj.Parent
+                    local ObjectClassName = obj.ClassName
+
+                    if ObjectParent then
+                        local ObjectName = Methods.string(obj.Name)
+
+                        if ObjectClassName ~= 'Model' and ObjectClassName ~= 'Player' then
+                            local IsService, Output = pcall(FindService, game, ObjectClassName)
+
+                            return if not (IsService and Output)then Methods.Instance(ObjectParent) .. ':WaitForChild(' .. ObjectName .. ')'else Services[ObjectClassName] or 'game:GetService("' .. ObjectClassName .. '")'
+                        elseif ObjectClassName == 'Model' then
+                            local Player = Players:GetPlayerFromCharacter(obj)
+
+                            return if not Player then Methods.Instance(ObjectParent) .. ':WaitForChild(' .. ObjectName .. ')'else'game:GetService("Players"):WaitForChild(' .. ObjectName .. ').Character'
+                        end
+
+                        return 'game:GetService("Players"):WaitForChild(' .. ObjectName .. ')'
+                    end
+
+                    return if ObjectClassName == 'DataModel'then'game'else'Instance.new("' .. ObjectClassName .. '", nil)'
+                end
+            end
+
+            Class.Services = Services
+        end
+
+        function DefaultMethods.NumberRange(Range: NumberRange)
+            local SerializeNumber = Methods.number
+
+            return 'NumberRange.new(' .. SerializeNumber(Range.Min) .. ', ' .. SerializeNumber(Range.Max) .. ')'
+        end
+        function DefaultMethods.NumberSequence(Sequence: NumberSequence)
+            local SerializeNumberSequenceKeypoint = Methods.NumberSequenceKeypoint
+            local Keypoints = Sequence.Keypoints
+            local Size = #Keypoints
+            local Serialized = ''
+
+            for i = 1, Size - 1 do
+                Serialized ..= SerializeNumberSequenceKeypoint(Keypoints[i]) .. ', '
+            end
+
+            return 'NumberSequence.new({' .. Serialized .. SerializeNumberSequenceKeypoint(Keypoints[Size]) .. '})'
+        end
+
+        do
+            local DefaultOverlapParams = OverlapParams.new()
+
+            function DefaultMethods.OverlapParams(
+                Params: OverlapParams,
+                format: boolean?,
+                indents: string
+            )
+                if DefaultOverlapParams ~= Params then
+                    local formatspace = format and '\n' .. indents or ' '
+                    local FilterDescendantsInstances = Params.FilterDescendantsInstances
+                    local FilterType = Params.FilterType
+                    local CollisionGroup = Params.CollisionGroup
+
+                    return '(function(Param : OverlapParams)' .. formatspace .. (if#FilterDescendantsInstances > 0 then'\tParam.FilterDescendantsInstances = ' .. Methods.table(FilterDescendantsInstances, false, '') .. formatspace else'') .. (if FilterType ~= Enum.RaycastFilterType.Exclude then'\tParam.FilterType = Enum.RaycastFilterType.' .. FilterType.Name .. formatspace else'') .. (if CollisionGroup ~= 'Default'then'\tParam.CollisionGroup = ' .. Methods.string(CollisionGroup) .. formatspace else'') .. (if Params.RespectCanCollide then'\tParam.RespectCanCollide = true' .. formatspace else'') .. (if Params.BruteForceAllSlow then'\tParam.BruteForceAllSlow = true' .. formatspace else'') .. '\treturn Params' .. formatspace .. 'end)(OverlapParams.new())'
+                end
+
+                return 'OverlapParams.new()'
+            end
+        end
+
+        function DefaultMethods.NumberSequenceKeypoint(Keypoint: NumberSequenceKeypoint)
+            local SerializeNumber = Methods.number
+
+            return 'NumberSequenceKeypoint.new(' .. SerializeNumber(Keypoint.Time) .. ', ' .. SerializeNumber(Keypoint.Value) .. ', ' .. SerializeNumber(Keypoint.Envelope) .. ')'
+        end
+        function DefaultMethods.PathWaypoint(Waypoint: PathWaypoint)
+            return 'PathWaypoint.new(' .. Methods.Vector3(Waypoint.Position) .. ', Enum.PathWaypointAction.' .. Waypoint.Action.Name .. ', ' .. Methods.string(Waypoint.Label) .. ')'
+        end
+
+        do
+            local function nanToString(num: number)
+                return if num == num then num else'0/0'
+            end
+
+            function DefaultMethods.PhysicalProperties(Properties: PhysicalProperties)
+                return 'PhysicalProperties.new(' .. (nanToString(Properties.Density)) .. ', ' .. nanToString(Properties.Friction) .. ', ' .. nanToString(Properties.Elasticity) .. ', ' .. nanToString(Properties.FrictionWeight) .. ', ' .. nanToString(Properties.ElasticityWeight) .. ')'
+            end
+        end
+
+        function DefaultMethods.RBXScriptConnection(
+            Connection: RBXScriptConnection,
+            _,
+            _,
+            _,
+            InComment: boolean?
+        )
+            local CommentSeperator = if not InComment then''else'='
+
+            return '(nil --[' .. CommentSeperator .. '[ RBXScriptConnection | IsConnected: ' .. (if Connection.Connected then'true'else'false') .. ' ]' .. CommentSeperator .. '])'
+        end
+
+        do
+            local Signals = {
+                GraphicsQualityChangeRequest = 'game.GraphicsQualityChangeRequest',
+                AllowedGearTypeChanged = 'game.AllowedGearTypeChanged',
+                ScreenshotSavedToAlbum = 'game.ScreenshotSavedToAlbum',
+                UniverseMetadataLoaded = 'game.UniverseMetadataLoaded',
+                ScreenshotReady = 'game.ScreenshotReady',
+                ServiceRemoving = 'game.ServiceRemoving',
+                ServiceAdded = 'game.ServiceAdded',
+                ItemChanged = 'game.ItemChanged',
+                CloseLate = 'game.CloseLate',
+                Loaded = 'game.Loaded',
+                Close = 'game.Close',
+                RobloxGuiFocusedChanged = 'game:GetService("RunService").RobloxGuiFocusedChanged',
+                PostSimulation = 'game:GetService("RunService").PostSimulation',
+                RenderStepped = 'game:GetService("RunService").RenderStepped',
+                PreSimulation = 'game:GetService("RunService").PreSimulation',
+                PreAnimation = 'game:GetService("RunService").PreAnimation',
+                PreRender = 'game:GetService("RunService").PreRender',
+                Heartbeat = 'game:GetService("RunService").Heartbeat',
+                Stepped = 'game:GetService("RunService").Stepped',
+            }
+
+            function DefaultMethods.RBXScriptSignal(
+                Signal: RBXScriptSignal,
+                _,
+                _,
+                _,
+                InComment: boolean?
+            )
+                local CommentSeperator = if not InComment then''else'='
+                local SignalName = tostring(Signal):match('Signal ([A-z]+)')
+
+                return Signals[SignalName] or '(nil --[' .. CommentSeperator .. '[ RBXScriptSignal | ' .. SignalName .. ' is not supported ]' .. CommentSeperator .. '])'
+            end
+
+            Class.Signals = Signals
+        end
+
+        function DefaultMethods.Random(_, _, _, _, InComment: boolean?)
+            local CommentSeperator = if not InComment then''else'='
+
+            return 'Random.new(--[' .. CommentSeperator .. '[ <Seed> ]' .. CommentSeperator .. '])'
+        end
+        function DefaultMethods.Ray(Ray: Ray)
+            local SerializeVector3 = Methods.Vector3
+
+            return 'Ray.new(' .. SerializeVector3(Ray.Origin) .. ', ' .. SerializeVector3(Ray.Direction) .. ')'
+        end
+
+        do
+            local DefaultRaycastParams = RaycastParams.new()
+
+            function DefaultMethods.RaycastParams(
+                Params: RaycastParams,
+                format: boolean?,
+                indents: string
+            )
+                if DefaultRaycastParams ~= Params then
+                    local formatspace = format and '\n' .. indents or ' '
+                    local FilterDescendantsInstances = Params.FilterDescendantsInstances
+                    local FilterType = Params.FilterType
+                    local CollisionGroup = Params.CollisionGroup
+
+                    return '(function(Param : RaycastParams)' .. formatspace .. (if#FilterDescendantsInstances > 0 then'\tParam.FilterDescendantsInstances = ' .. Methods.table(FilterDescendantsInstances, false, '') .. formatspace else'') .. (if FilterType ~= Enum.RaycastFilterType.Exclude then'\tParam.FilterType = Enum.RaycastFilterType.' .. FilterType.Name .. formatspace else'') .. (if Params.IgnoreWater then'\tParam.IgnoreWater = true' .. formatspace else'') .. (if CollisionGroup ~= 'Default'then'\tParam.CollisionGroup = ' .. Methods.string(CollisionGroup) .. formatspace else'') .. (if Params.RespectCanCollide then'\tParam.RespectCanCollide = true' .. formatspace else'') .. (if Params.BruteForceAllSlow then'\tParam.BruteForceAllSlow = true' .. formatspace else'') .. '\treturn Params' .. formatspace .. 'end)(RaycastParams.new())'
+                end
+
+                return 'RaycastParams.new()'
+            end
+        end
+
+        function DefaultMethods.Rect(Rect: Rect)
+            local SerializeVector2 = Methods.Vector2
+
+            return 'Rect.new(' .. SerializeVector2(Rect.Min) .. ', ' .. SerializeVector2(Rect.Max) .. ')'
+        end
+        function DefaultMethods.Region3(Region: Region3)
+            local SerializeVector3 = Methods.Vector3
+            local Center = Region.CFrame.Position
+            local Size = Region.Size / 2
+
+            return 'Region3.new(' .. SerializeVector3(Center - Size) .. ', ' .. SerializeVector3(Center + Size) .. ')'
+        end
+        function DefaultMethods.Region3int16(Region: Region3int16)
+            local SerializeVector3int16 = Methods.Vector3int16
+
+            return 'Region3int16.new(' .. SerializeVector3int16(Region.Min) .. ', ' .. SerializeVector3int16(Region.Max) .. ')'
+        end
+        function DefaultMethods.RotationCurveKey(Curve: RotationCurveKey)
+            return 'RotationCurveKey.new(' .. Methods.number(Curve.Time) .. ', ' .. Methods.CFrame(Curve.Value) .. ', Enum.KeyInterpolationMode.' .. Curve.Interpolation.Name .. ')'
+        end
+        function DefaultMethods.SharedTable(
+            Shared: SharedTable,
+            format: boolean?,
+            indents: string,
+            _,
+            InComment: boolean?
+        )
+            local isreadonly = IsSharedFrozen(Shared)
+
+            if SharedSize(Shared) ~= 0 then
+                local stackindent = indents .. (if format then'\t'else'')
+                local CurrentIndex = 1
+                local Serialized = {}
+
+                for i, v in Shared do
+                    Serialized[CurrentIndex] = (if CurrentIndex ~= i then ValidateSharedTableIndex(i)else'') .. Serialize(v, format, stackindent, nil, InComment)
+
+                    CurrentIndex += 1
+                end
+
+                local formatspace = if format then'\n'else''
+                local Contents = formatspace .. stackindent .. concat(Serialized, (if format then',\n'else', ') .. stackindent) .. formatspace .. indents
+
+                return if not isreadonly then'SharedTable.new({' .. Contents .. '})'else'SharedTable.cloneAndFreeze(SharedTable.new({' .. Contents .. '}))'
+            end
+
+            return if not isreadonly then'SharedTable.new()'else'SharedTable.cloneAndFreeze(SharedTable.new())'
+        end
+        function DefaultMethods.TweenInfo(Info: TweenInfo)
+            return 'TweenInfo.new(' .. Methods.number(Info.Time) .. ', Enum.EasingStyle.' .. Info.EasingStyle.Name .. ', Enum.EasingDirection.' .. Info.EasingDirection.Name .. ', ' .. Info.RepeatCount .. ', ' .. (if Info.Reverses then'true'else'false') .. ', ' .. Methods.number(Info.DelayTime) .. ')'
+        end
+        function DefaultMethods.UDim(UDim: UDim)
+            return 'UDim.new(' .. Methods.number(UDim.Scale) .. ', ' .. UDim.Offset .. ')'
+        end
+        function DefaultMethods.UDim2(UDim2: UDim2)
+            local SerializeNumber = Methods.number
+            local Width = UDim2.X
+            local Height = UDim2.Y
+
+            return 'UDim2.new(' .. SerializeNumber(Width.Scale) .. ', ' .. Width.Offset .. ', ' .. SerializeNumber(Height.Scale) .. ', ' .. Height.Offset .. ')'
+        end
+        function DefaultMethods.Vector2(Vector: Vector2)
+            local SerializeNumber = Methods.number
+
+            return 'Vector2.new(' .. SerializeNumber(Vector.X) .. ', ' .. SerializeNumber(Vector.Y) .. ')'
+        end
+        function DefaultMethods.Vector2int16(Vector: Vector2int16)
+            return 'Vector2int16.new(' .. Vector.X .. ', ' .. Vector.Y .. ')'
+        end
+        function DefaultMethods.Vector3(Vector: Vector3)
+            local SerializeNumber = Methods.number
+
+            return DefaultVectors[Vector] or 'vector.create(' .. SerializeNumber(Vector.X) .. ', ' .. SerializeNumber(Vector.Y) .. ', ' .. SerializeNumber(Vector.Z) .. ')'
+        end
+        function DefaultMethods.Vector3int16(Vector: Vector3int16)
+            return 'Vector3int16.new(' .. Vector.X .. ', ' .. Vector.Y .. ', ' .. Vector.Z .. ')'
+        end
+        function DefaultMethods.boolean(bool: boolean)
+            return if bool then'true'else'false'
+        end
+        function DefaultMethods.buffer(buff: buffer)
+            return 'buffer.fromstring(' .. Methods.string(bufftostring(buff)) .. ')'
+        end
+
+        do
+            local GlobalFunctions = {}
+
+            do
+                local getrenv = getrenv or (function()
+                    local env = {
+                        bit32 = bit32,
+                        buffer = buffer,
+                        coroutine = coroutine,
+                        debug = debug,
+                        math = math,
+                        os = os,
+                        string = string,
+                        table = table,
+                        utf8 = utf8,
+                        Content = Content,
+                        Axes = Axes,
+                        AdReward = AdReward,
+                        BrickColor = BrickColor,
+                        CatalogSearchParams = CatalogSearchParams,
+                        CFrame = CFrame,
+                        Color3 = Color3,
+                        ColorSequence = ColorSequence,
+                        ColorSequenceKeypoint = ColorSequenceKeypoint,
+                        DateTime = DateTime,
+                        DockWidgetPluginGuiInfo = DockWidgetPluginGuiInfo,
+                        Faces = Faces,
+                        FloatCurveKey = FloatCurveKey,
+                        Font = Font,
+                        Instance = Instance,
+                        NumberRange = NumberRange,
+                        NumberSequence = NumberSequence,
+                        NumberSequenceKeypoint = NumberSequenceKeypoint,
+                        OverlapParams = OverlapParams,
+                        PathWaypoint = PathWaypoint,
+                        PhysicalProperties = PhysicalProperties,
+                        Random = Random,
+                        Ray = Ray,
+                        RaycastParams = RaycastParams,
+                        Rect = Rect,
+                        Region3 = Region3,
+                        Region3int16 = Region3int16,
+                        RotationCurveKey = RotationCurveKey,
+                        SharedTable = SharedTable,
+                        task = task,
+                        TweenInfo = TweenInfo,
+                        UDim = UDim,
+                        UDim2 = UDim2,
+                        Vector2 = Vector2,
+                        Vector2int16 = Vector2int16,
+                        Vector3 = Vector3,
+                        vector = vector,
+                        Vector3int16 = Vector3int16,
+                        CellId = CellId,
+                        PluginDrag = PluginDrag,
+                        SecurityCapabilities = SecurityCapabilities,
+                        assert = assert,
+                        error = error,
+                        getfenv = getfenv,
+                        getmetatable = getmetatable,
+                        ipairs = ipairs,
+                        loadstring = loadstring,
+                        newproxy = newproxy,
+                        next = next,
+                        pairs = pairs,
+                        pcall = pcall,
+                        print = print,
+                        rawequal = rawequal,
+                        rawget = rawget,
+                        rawlen = rawlen,
+                        rawset = rawset,
+                        select = select,
+                        setfenv = setfenv,
+                        setmetatable = setmetatable,
+                        tonumber = tonumber,
+                        tostring = tostring,
+                        unpack = unpack,
+                        xpcall = xpcall,
+                        collectgarbage = collectgarbage,
+                        delay = delay,
+                        gcinfo = gcinfo,
+                        PluginManager = PluginManager,
+                        DebuggerManager = DebuggerManager,
+                        require = require,
+                        settings = settings,
+                        spawn = spawn,
+                        tick = tick,
+                        time = time,
+                        UserSettings = UserSettings,
+                        wait = wait,
+                        warn = warn,
+                        Delay = Delay,
+                        ElapsedTime = ElapsedTime,
+                        elapsedTime = elapsedTime,
+                        printidentity = printidentity,
+                        Spawn = Spawn,
+                        Stats = Stats,
+                        stats = stats,
+                        Version = Version,
+                        version = version,
+                        Wait = Wait,
+                    }
+
+                    return function()
+                        return env
+                    end
+                end)()
+                local Visited = setmetatable({}, weakkeys)
+
+                for i, v in getrenv()do
+                    local ElementType = type(i) == 'string' and type(v)
+
+                    if ElementType then
+                        if ElementType == 'table' then
+                            local function LoadLibrary(
+                                Path: string,
+                                tbl: {[string]: any}
+                            )
+                                if not Visited[tbl] then
+                                    Visited[tbl] = true
+
+                                    for i, v in next, tbl do
+                                        local Type = type(i) == 'string' and not Keywords[i] and i:match('[A-z_][A-z_0-9]') and type(v)
+                                        local NewPath = Type and (Type == 'function' or Type == 'table') and Path .. '.' .. i
+
+                                        if NewPath then
+                                            if Type == 'function' then
+                                                GlobalFunctions[v] = NewPath
+                                            else
+                                                LoadLibrary(NewPath, v)
+                                            end
+                                        end
+                                    end
+
+                                    Visited[tbl] = nil
+                                end
+                            end
+
+                            LoadLibrary(i, v)
+                            table.clear(Visited)
+                        elseif ElementType == 'function' then
+                            GlobalFunctions[v] = i
+                        end
+                    end
+                end
+
+                Class.GlobalFunctions = GlobalFunctions
+            end
+
+            DefaultMethods['function'] = function(
+                Function: (...any?) -> ...any?,
+                format: boolean?,
+                indents: string,
+                _,
+                InComment: boolean?
+            )
+                local IsGlobal = GlobalFunctions[Function]
+
+                if not IsGlobal then
+                    if shared.EmbedFunctionsAsCode then
+                        if format then
+                            local SerializeString = Methods.string
+                            local CommentSeperator = if not InComment then''else'='
+                            local tempindents = indents .. '\t\t\t'
+                            local newlineindent = ',\n' .. tempindents
+                            local source, line, name, numparams, vargs = info(Function, 'slna')
+                            local lclosure = line ~= -1
+
+                            return (if lclosure then''else'coroutine.wrap(') .. 'function()\n\t' .. indents .. '--[' .. CommentSeperator .. '[\n\t\t' .. indents .. 'info = {\n' .. tempindents .. 'source = ' .. SerializeString(source) .. newlineindent .. 'line = ' .. line .. newlineindent .. 'what = ' .. (if lclosure then'"Lua"'else'"C"') .. newlineindent .. 'name = ' .. SerializeString(name) .. newlineindent .. 'numparams = ' .. numparams .. newlineindent .. 'vargs = ' .. (if vargs then'true'else'false') .. newlineindent .. 'function = ' .. tostring(Function) .. '\n\t\t' .. indents .. '}\n\t' .. indents .. ']' .. CommentSeperator .. ']\n' .. indents .. 'end' .. (if lclosure then''else')')
+                        end
+                    else
+                        if info(Function, 'n') ~= '' then
+                            return string.format('<%s Name: %s>', tostring(Function), debug.info(Function, 'n'))
+                        end
+
+                        return string.format('<Anonymous %s>', tostring(Function))
+                    end
+
+                    return if islclosure(Function)then'function() end'else'coroutine.wrap(function() end)'
+                end
+
+                return IsGlobal
+            end
+        end
+
+        function DefaultMethods.table(
+            tbl: {[any]: any},
+            format: boolean?,
+            indents: string,
+            CyclicList: {[{[any]: any?}]: boolean | nil}?,
+            InComment: boolean?
+        )
+            if not CyclicList then
+                CyclicList = setmetatable({}, weakkeys)
+            end
+            if not CyclicList[tbl] then
+                local isreadonly = isfrozen(tbl)
+                local Index, Value = next(tbl)
+
+                if Index ~= nil then
+                    local Indents = indents .. (if format then'\t'else'')
+                    local Ending = (if format then',\n'else', ')
+                    local formatspace = if format then'\n'else''
+                    local Generation = '{' .. formatspace
+                    local CurrentIndex = 1
+
+                    CyclicList[tbl] = true
+
+                    repeat
+                        Generation ..= Indents .. (if CurrentIndex ~= Index then ValidateIndex(Index)else'') .. Serialize(Value, format, Indents, CyclicList, InComment)
+
+                        Index, Value = next(tbl, Index)
+
+                        Generation ..= if Index ~= nil then Ending else formatspace .. indents .. '}'
+                        CurrentIndex += 1
+                    until Index == nil
+
+                    CyclicList[tbl] = nil
+
+                    return if not isreadonly then Generation else'table.freeze(' .. Generation .. ')'
+                end
+
+                return if not isreadonly then'{}'else'table.freeze({})'
+            else
+                return '*** cycle table reference detected ***'
+            end
+        end
+
+        DefaultMethods['nil'] = function()
+            return 'nil'
+        end
+
+        function DefaultMethods.number(num: number)
+            return if num < 1 / 0 and num > -1 / 0
+                then tostring(num)
+                elseif num == 1 / 0
+                then(if Class._Serializeinf then'math.huge'else'1/0')
+                elseif num == num
+                then(if Class._Serializeinf then'-math.huge'else'-1/0')
+                else'0/0'
+        end
+
+        do
+            local ByteList = {
+                ['\a'] = '\\a',
+                ['\b'] = '\\b',
+                ['\t'] = '\\t',
+                ['\n'] = '\\n',
+                ['\v'] = '\\v',
+                ['\f'] = '\\f',
+                ['\r'] = '\\r',
+                ['"'] = '\\"',
+                ['\\'] = '\\\\',
+            }
+
+            for i = 0, 255 do
+                local Character = (i < 32 or i > 126) and string.char(i)
+
+                if Character and not ByteList[Character] then
+                    ByteList[Character] = ('\\%03d'):format(i)
+                end
+            end
+
+            function DefaultMethods.string(RawString: string)
+                return '"' .. RawString:gsub('[\0-\31"\\\127-\u{ff}]', ByteList) .. '"'
+            end
+        end
+
+        function DefaultMethods.thread(thread: thread)
+            return string.format('<%s>', tostring(thread))
+        end
+        function DefaultMethods.userdata(userdata: any)
+            return getmetatable(userdata) ~= nil and 'newproxy(true)' or 'newproxy(false)'
+        end
+
+        do
+            local SecurityCapabilityEnums = Enum.SecurityCapability:GetEnumItems()
+
+            function DefaultMethods.SecurityCapabilities(
+                Capabilities: SecurityCapabilities,
+                format: boolean?,
+                _,
+                _,
+                InComment: boolean?
+            )
+                local ContainedCapabilities = {}
+                local CurrentIndex = 1
+
+                for i, v in SecurityCapabilityEnums do
+                    if Capabilities:Contains(v) then
+                        ContainedCapabilities[CurrentIndex] = 'Enum.SecurityCapability.' .. v.Name
+
+                        CurrentIndex += 1
+                    end
+                end
+
+                return 'SecurityCapabilities.new(' .. concat(ContainedCapabilities, ', ') .. ')'
+            end
+        end
+
+        function DefaultMethods.PluginDrag(Drag: PluginDrag)
+            local SerializeString = Methods.string
+
+            return 'PluginDrag.new(' .. SerializeString(Drag.Sender) .. ', ' .. SerializeString(Drag.MimeType) .. ', ' .. SerializeString(Drag.Data) .. ', ' .. SerializeString(Drag.MouseIcon) .. ', ' .. SerializeString(Drag.DragIcon) .. ', ' .. Methods.Vector2(Drag.HotSpot) .. ')'
+        end
+        function DefaultMethods.CellId(Cell: CellId)
+            local ArgumentFunction = tostring(Cell):gmatch('%w+')
+            local SerializeNumber = Methods.number
+
+            local function SerializeStringToNumber(number: string)
+                return SerializeNumber(tonumber(number))
+            end
+
+            return 'CellId.new(' .. ArgumentFunction() .. ', ' .. SerializeStringToNumber(ArgumentFunction()) .. ', ' .. SerializeStringToNumber(ArgumentFunction()) .. ', ' .. SerializeStringToNumber(ArgumentFunction()) .. ')'
+        end
+
+        local function Serializevargs(...: any)
+            local tbl = pack(...)
+            local GenerationSize = 0
+
+            for i = 1, #tbl do
+                local Generation = Serialize(tbl[i], true, '')
+
+                tbl[i] = Generation
+
+                GenerationSize += #Generation
+
+                if GenerationSize > 100000 then
+                    break
+                end
+            end
+
+            return unpack(tbl, 1, tbl.n)
+        end
+
+        function Class.Convert<Type>(DataStructure: Type, format: boolean?)
+            return Serialize(DataStructure, format, '')
+        end
+        function Class.ConvertKnown<Type>(
+            DataType: string,
+            DataStructure: Type,
+            format: boolean?
+        )
+            return Methods[DataType](DataStructure, format, '')
+        end
+        function Class.print(...: any?)
+            print(Serializevargs(...))
+        end
+        function Class.warn(...: any?)
+            warn(Serializevargs(...))
+        end
+
+        if type(setclipboard) == 'function' then
+            local setclipboard = setclipboard
+
+            function Class.setclipboard<Type>(
+                DataStructure: Type,
+                format: boolean?
+            )
+                setclipboard(Serialize(DataStructure, format, ''))
+            end
+        end
+
+        Class.Internals = table.freeze({Serialize = Serialize})
+
+        return setmetatable(Class, {
+            __tostring = function(self)
+                return 'DataToCode ' .. self.__VERSION
+            end,
+        })
+    end
+    function __DARKLUA_BUNDLE_MODULES.d()
+        local function LookupTable(array)
+            local Out = {}
+
+            for _, Value in next, array do
+                Out[Value] = true
+            end
+
+            return Out
+        end
+
+        local LuaKeywords = LookupTable({
+            'and',
+            'break',
+            'do',
+            'else',
+            'elseif',
+            'end',
+            'false',
+            'for',
+            'function',
+            'if',
+            'in',
+            'local',
+            'nil',
+            'not',
+            'or',
+            'repeat',
+            'return',
+            'then',
+            'true',
+            'until',
+            'while',
+            'continue',
+        })
+        local SerializeString
+
+        do
+            local SpecialCharacters = {
+                ['"'] = '\\"',
+                ['\\'] = '\\\\',
+                ['\a'] = '\\a',
+                ['\b'] = '\\b',
+                ['\t'] = '\\t',
+                ['\n'] = '\\n',
+                ['\v'] = '\\v',
+                ['\f'] = '\\f',
+                ['\r'] = '\\r',
+            }
+
+            for Index = 0, 255 do
+                local Character = string.char(Index)
+
+                if not SpecialCharacters[Character] and (Index < 32 or Index > 126) then
+                    SpecialCharacters[Character] = string.format('\\x%02X', Index)
+                end
+            end
+
+            function SerializeString(inputString)
+                return table.concat({
+                    '"',
+                    string.gsub(inputString, '[%z\\"\1-\31\127-\u{ff}]', SpecialCharacters),
+                    '"',
+                })
+            end
+        end
+
+        local EvaluateInstancePath
+
+        do
+            local function IsService(object)
+                local FindServiceSuccess, ServiceObject = pcall(game.FindService, game, object.ClassName)
+
+                if FindServiceSuccess and ServiceObject then
+                    return true
+                end
+
+                return false
+            end
+
+            function EvaluateInstancePath(object)
+                local ObjectPointer = object
+
+                if object == game then
+                    return 'game'
+                elseif object == workspace then
+                    return 'workspace'
+                end
+                if not ObjectPointer then
+                    return 'nil'
+                end
+
+                local Path = ''
+
+                while ObjectPointer do
+                    local ObjectName = ObjectPointer.Name
+                    local ObjectClassName = ObjectPointer.ClassName
+                    local ObjectParent = ObjectPointer.Parent
+
+                    if ObjectParent == game and IsService(ObjectPointer) then
+                        Path = ':GetService(' .. SerializeString(ObjectClassName) .. ')' .. Path
+                    elseif not LuaKeywords[ObjectName] and string.match(ObjectName, '^[A-Za-z_][A-Za-z0-9_]*$') then
+                        Path = '.' .. ObjectName .. Path
+                    else
+                        Path = '[' .. SerializeString(ObjectName) .. ']' .. Path
+                    end
+                    if ObjectParent == game then
+                        Path = 'game' .. Path
+
+                        return Path
+                    elseif ObjectParent == workspace then
+                        Path = 'workspace' .. Path
+
+                        return Path
+                    end
+
+                    ObjectPointer = ObjectParent
+                end
+
+                local OldThreadContext = getthreadcontext()
+
+                setthreadcontext(8)
+
+                local NilInstanceString = `<{object.ClassName}`
+
+                if shared.UseDebugId then
+                    NilInstanceString ..= ` {object:GetDebugId()}>`
+                else
+                    NilInstanceString ..= ` {object.Name}>`
+                end
+
+                setthreadcontext(OldThreadContext)
+
+                return NilInstanceString
+            end
+        end
+
+        return EvaluateInstancePath
+    end
+    function __DARKLUA_BUNDLE_MODULES.e()
+        local SafetyNet = {}
+        local GameMetamethods = {
+            ['__index'] = {
+                Name = '__index',
+                ExpectedArguments = 2,
+            },
+            ['__newindex'] = {
+                Name = '__newindex',
+                ExpectedArguments = 3,
+            },
+            ['__namecall'] = {
+                Name = '__namecall',
+                ExpectedArguments = math.huge,
+            },
+        }
+
+        function SafetyNet.ValidateMetamethodCall(
+            Metamethod: string,
+            SelfType: string,
+            ...
+        )
+            local Args = table.pack(...)
+            local ExpectedArguments = GameMetamethods[Metamethod].ExpectedArguments
+
+            if ExpectedArguments ~= math.huge then
+                if Args.n ~= ExpectedArguments then
+                    return false, string.format('Expected %d arguments, got %d', ExpectedArguments, Args.n)
+                end
+                if typeof(Args[2]) ~= 'string' then
+                    return false, string.format('Invalid key type! Expected (string), got (%s)', typeof(Args[2]))
+                end
+                if typeof(Args[3]) == 'userdata' then
+                    return false, string.format('Invalid value type! Expected (not userdata), got (%s)', typeof(Args[3]))
+                end
+            else
+                if Args.n < 1 then
+                    return false, string.format('Missing self argument! Expected (%s), got (none)', SelfType)
+                end
+            end
+            if typeof(Args[1]) ~= SelfType then
+                return false, string.format('Wrong self type! Expected (%s), got (%s)', SelfType, typeof(Args[1]))
+            end
+
+            return true, 'Valid'
+        end
+
+        return SafetyNet
+    end
 end
 
 shared.DirectCall = {}
+shared.ProxyLookup = {}
 
 local MAX_BUFFER_SIZE = 1024 * 1024 * 1024
 
-type SessionConfiguration = {LogEnvironment: boolean, LogMetamethods: boolean, LogAsCode: boolean?, LuraphCompatibility: boolean?, FilterInstanceIndex: boolean?, PrettyPrint: boolean?, ShowDebugIdForNilInstancesInsteadOfName: boolean?, LogMetamethodFunctionFetches: boolean?, MetaMethodFunctionFetchTrap: boolean?}
+type SessionConfiguration = {LogEnvironment: boolean, LogMetamethods: boolean, LogRBXScriptSignals: boolean?, LuraphCompatibility: boolean?, FilterInstanceIndex: boolean?, PrettyPrint: boolean?, ShowDebugIdForNilInstancesInsteadOfName: boolean?, LogMetamethodFunctionFetches: boolean?, SafetyNet: boolean?, EmbedFunctionsAsCode: boolean?}
 
 local DefaultSessionConfiguration: SessionConfiguration = {
     LogEnvironment = true,
     LogMetamethods = true,
-    LogAsCode = true,
+    LogRBXScriptSignals = true,
     LuraphCompatibility = false,
     FilterInstanceIndex = false,
     PrettyPrint = true,
     ShowDebugIdForNilInstancesInsteadOfName = true,
     LogMetamethodFunctionFetches = true,
-    MetaMethodFunctionFetchTrap = true,
+    EmbedFunctionsAsCode = false,
+    SafetyNet = true,
 }
 
-type LogConstructorSet = {FunctionCall: (Function:(...any?) -> ...any?, Args:{any?}, Return:{any?}, FunctionPath:string?) -> string, Namecall: (Instance:Instance, Method:string, Args:{any?}, Return:{any?}) -> string, Index: (Instance:Instance, Key:string, Return:{any?}) -> string, NewIndex: (Instance:Instance, Key:string, Value:any) -> string}
+type LogConstructorSet = {FunctionCall: (Function:(...any?) -> ...any?, Args:{any?}, Return:{any?}, FunctionPath:string?) -> string, Namecall: (Instance:Instance | {Instance: Instance, RBXScriptSignal: RBXScriptSignal}, Method:string, Args:{any?}, Return:{any?}) -> string, Index: (Instance:Instance, Key:string, Return:{any?}) -> string, NewIndex: (Instance:Instance, Key:string, Value:any) -> string}
 type Session = {Configuration: SessionConfiguration, Targets: {string}, Data: buffer, Written: number, Start: number, End: number, Close: () -> (), GUID: string, Log: (LogString:string) -> (), Active: boolean, SaveToFile: (self:Session, FileName:string) -> ()}
 
 local HttpService = game:GetService('HttpService')
-local LuaEncodeAndEvaluateInstancePath = __DARKLUA_BUNDLE_MODULES.load('a')
-local LuaEncodeCore, EvaluateInstancePath = LuaEncodeAndEvaluateInstancePath.LuaEncode, LuaEncodeAndEvaluateInstancePath.EvaluateInstancePath
-local HookMgr = __DARKLUA_BUNDLE_MODULES.load('b')
-local Utils = __DARKLUA_BUNDLE_MODULES.load('c')
+local HookMgr = __DARKLUA_BUNDLE_MODULES.load('a')
+local Utils = __DARKLUA_BUNDLE_MODULES.load('b')
+local DataToCode = __DARKLUA_BUNDLE_MODULES.load('c')
+local EvaluateInstancePath = __DARKLUA_BUNDLE_MODULES.load('d')
+local SafetyNet = __DARKLUA_BUNDLE_MODULES.load('e')
 local DebugInfo = getrenv and getrenv().debug.info or debug.info
 local JSONEncode = function(...): string
     if shared.DirectCall.__namecall then
@@ -786,55 +1284,14 @@ local LuaEncode = function(x)
 
     setthreadcontext(8)
 
-    local Result = LuaEncodeCore(x, {
-        Prettify = #x > 1 and shared.Prettify,
-    })
+    local Result = DataToCode.Convert(x, #x > 1 and shared.Prettify)
 
     setthreadcontext(OldThreadContext)
 
     return Result
 end
 local Calligraph = {
-    Version = '1.5.4',
-}
-local JSONLogConstructors: LogConstructorSet = {
-    FunctionCall = function(Function, Args, Return, FunctionPath)
-        return JSONEncode({
-            Time = os.clock(),
-            Type = 'FunctionCall',
-            Name = FunctionPath or DebugInfo(Function, 'n') or tostring(Function),
-            Args = LuaEncode(Args),
-            Return = LuaEncode(Return),
-        })
-    end,
-    Namecall = function(Instance, Method, Args, Return)
-        return JSONEncode({
-            Time = os.clock(),
-            Type = 'Namecall',
-            Instance = Instance:GetFullName(),
-            Method = Method,
-            Args = LuaEncode(Args),
-            Return = LuaEncode(Return),
-        })
-    end,
-    Index = function(Instance, Key, Return)
-        return JSONEncode({
-            Time = os.clock(),
-            Type = 'Index',
-            Instance = Instance:GetFullName(),
-            Key = Key,
-            Return = LuaEncode(Return),
-        })
-    end,
-    NewIndex = function(Instance, Key, Value)
-        return JSONEncode({
-            Time = os.clock(),
-            Type = 'NewIndex',
-            Instance = Instance:GetFullName(),
-            Key = Key,
-            Value = LuaEncode({Value}),
-        })
-    end,
+    Version = '1.5.5',
 }
 
 local function FormatCodeArgs(Args: {any?}): string
@@ -880,13 +1337,15 @@ local CodeLogConstructors: LogConstructorSet = {
         return string.format('%s(%s) --> %s', FunctionName, FormatCodeArgs(Args), LuaEncode(Return))
     end,
     Namecall = function(Instance, Method, Args, Return)
-        local CallArgs = {}
-
-        for i, v in ipairs(Args)do
-            table.insert(CallArgs, v)
+        if typeof(Instance) == 'table' then
+            if typeof(Instance.RBXScriptSignal) == 'RBXScriptSignal' then
+                return string.format('%s.%s:%s(%s)', FormatInstancePath(Instance.Instance), tostring(Instance.RBXScriptSignal):gsub('Signal ', ''), Method, FormatCodeArgs(Args))
+            end
         end
 
-        return string.format('%s:%s(%s) --> %s', FormatInstancePath(Instance), Method, FormatCodeArgs(CallArgs), LuaEncode(Return))
+        assert(typeof(Instance) == 'Instance')
+
+        return string.format('%s:%s(%s) --> %s', FormatInstancePath(Instance), Method, FormatCodeArgs(Args), LuaEncode(Return))
     end,
     Index = function(Instance, Key, Return)
         if typeof(Return[1]) == 'RBXScriptSignal' then
@@ -904,10 +1363,14 @@ function Calligraph.NewMethodProxy(
     Session: Session,
     Formatter: LogConstructorSet,
     Method: string,
-    Instance: Instance,
+    Instance: Instance | {Instance: Instance, RBXScriptSignal: RBXScriptSignal},
     OldMethod: (...any?) -> ...any?
 )
-    return newcclosure(function(...)
+    if shared.ProxyLookup[OldMethod] then
+        return shared.ProxyLookup[OldMethod]
+    end
+
+    shared.ProxyLookup[OldMethod] = newcclosure(function(...)
         if checkcaller() then
             return OldMethod(...)
         end
@@ -926,92 +1389,11 @@ function Calligraph.NewMethodProxy(
         if Success then
             return table.unpack(Return, 1, ArgsN)
         else
-            return error(Return[1])
+            return OldMethod(...)
         end
     end)
-end
-function Calligraph.NewRBXScriptSignalProxy(
-    Session: Session,
-    Formatter: LogConstructorSet,
-    Instance: Instance,
-    Signal: RBXScriptSignal
-)
-    local Proxy = {
-        Connect = newcclosure(function(self, Callback: (...any?) -> ...any?)
-            if checkcaller() then
-                return Signal:Connect(Callback)
-            end
 
-            task.spawn(function()
-                local SignalPath = FormatInstancePath(Instance) .. '.' .. tostring(Signal):gsub('Signal ', '')
-
-                Session.Log(string.format('%s:Connect(%s)', SignalPath, FormatCodeArgs({Callback})))
-            end)
-
-            return Signal:Connect(Callback)
-        end),
-        ConnectParallel = newcclosure(function(self, Callback: (...any?) -> ...any?)
-            if checkcaller() then
-                return Signal:Connect(Callback)
-            end
-
-            task.spawn(function()
-                local SignalPath = FormatInstancePath(Instance) .. '.' .. tostring(Signal):gsub('Signal ', '')
-
-                Session.Log(string.format('%s:Connect(%s)', SignalPath, FormatCodeArgs({Callback})))
-            end)
-
-            return Signal:Connect(Callback)
-        end),
-        Once = newcclosure(function(self, Callback: (...any?) -> ...any?)
-            if checkcaller() then
-                return Signal:Once(Callback)
-            end
-
-            task.spawn(function()
-                local SignalPath = FormatInstancePath(Instance) .. '.' .. tostring(Signal):gsub('Signal ', '')
-
-                Session.Log(string.format('%s:Once(%s)', SignalPath, FormatCodeArgs({Callback})))
-            end)
-
-            return Signal:Once(Callback)
-        end),
-        Wait = newcclosure(function(self)
-            if checkcaller() then
-                return Signal:Wait()
-            end
-
-            task.spawn(function()
-                local SignalPath = FormatInstancePath(Instance) .. '.' .. tostring(Signal):gsub('Signal ', '')
-
-                Session.Log(string.format('%s:Wait()', SignalPath))
-            end)
-
-            return Signal:Wait()
-        end),
-    }
-    local SignalMetatable = {
-        __index = function(self, key)
-            return rawget(Signal, key)
-        end,
-        __tostring = function()
-            return tostring(Signal)
-        end,
-        __type = function()
-            return 'RBXScriptSignal'
-        end,
-        __eq = function(self, other)
-            if other == Signal then
-                return true
-            end
-
-            return false
-        end,
-    }
-
-    setmetatable(Proxy, SignalMetatable)
-
-    return Proxy
+    return shared.ProxyLookup[OldMethod]
 end
 function Calligraph.NewFunctionProxy(
     Session: Session,
@@ -1019,7 +1401,11 @@ function Calligraph.NewFunctionProxy(
     Function: (...any?) -> ...any?,
     FunctionPath: string?
 )
-    return function(Old, ...)
+    if shared.ProxyLookup[Function] then
+        return shared.ProxyLookup[Function]
+    end
+
+    shared.ProxyLookup[Function] = function(Old, ...)
         if checkcaller() then
             return Old(...)
         end
@@ -1046,6 +1432,8 @@ function Calligraph.NewFunctionProxy(
             return error(Return[1])
         end
     end
+
+    return shared.ProxyLookup[Function]
 end
 function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfiguration)
     for Key, Value in next, DefaultSessionConfiguration do
@@ -1056,15 +1444,25 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
 
     shared.Prettify = (Configuration.PrettyPrint == true)
     shared.UseDebugId = (Configuration.ShowDebugIdForNilInstancesInsteadOfName == true)
+    shared.EmbedFunctionsAsCode = (Configuration.EmbedFunctionsAsCode == true)
 
     local Session: Session
-    local LogFormatter: LogConstructorSet = (Configuration.LogAsCode == true) and CodeLogConstructors or JSONLogConstructors
+    local LogFormatter: LogConstructorSet = CodeLogConstructors
     local LastLogContent: string = ''
     local RepeatCount: number = 0
     local GameMetamethods = {
-        [HookMgr.GameMT.__index] = '__index',
-        [HookMgr.GameMT.__newindex] = '__newindex',
-        [HookMgr.GameMT.__namecall] = '__namecall',
+        [HookMgr.GameMT.__index] = {
+            Name = '__index',
+            ExpectedArguments = 2,
+        },
+        [HookMgr.GameMT.__newindex] = {
+            Name = '__newindex',
+            ExpectedArguments = 3,
+        },
+        [HookMgr.GameMT.__namecall] = {
+            Name = '__namecall',
+            ExpectedArguments = math.huge,
+        },
     }
 
     local function WriteToBuffer(FormattedLog: string)
@@ -1133,6 +1531,10 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
                 return
             end
 
+            local OldThreadContext = getthreadcontext()
+
+            setthreadcontext(8)
+
             local IsSystemMessage = string.match(LogString, '^%[SYSTEM%]') or string.match(LogString, '^Calligraph v') or string.match(LogString, '^Session') or string.match(LogString, '^Configuration:') or string.match(LogString, '^Targets:') or string.match(LogString, '^Log format:')
 
             if IsSystemMessage then
@@ -1152,6 +1554,8 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
                 LastLogContent = LogString
                 RepeatCount = 1
             end
+
+            setthreadcontext(OldThreadContext)
         end,
         SaveToFile = function(self: Session, FileName: string)
             FlushRepeatedLog()
@@ -1194,10 +1598,168 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
     Session.Log('Session GUID: ' .. Session.GUID)
     Session.Log('Configuration: ' .. JSONEncode(Session.Configuration))
     Session.Log('Targets: ' .. table.concat(Session.Targets, ', '))
-    Session.Log(`Log format: {Session.Configuration.LogAsCode and 'Luau Code' or 'JSON'}`)
+    Session.Log(`Log format: Luau Code`)
     Session.Log(
 [[[SYSTEM] Calligraph is now active. All logs will be recorded.]])
 
+    if Session.Configuration.LogMetamethods then
+        shared.DirectCall.__index = HookMgr.RegisterHook(`Calligraph:{Session.GUID}:__index`, HookMgr.GameMT.__index, function(
+            Old,
+            ...
+        )
+            if checkcaller() then
+                return Old(...)
+            end
+
+            local CallSource = DebugInfo(4, 's')
+
+            if not table.find(Session.Targets, CallSource) then
+                return Old(...)
+            end
+
+            local IsValid, Message = SafetyNet.ValidateMetamethodCall('__index', 'Instance', 
+...)
+
+            if not IsValid then
+                task.spawn(Session.Log, string.format('[!!!] SafetyNet triggered! [__index] %s', Message))
+
+                return Old(...)
+            end
+
+            local Self, Index = ...
+            local Return = Old(Self, Index)
+
+            if not (Session.Configuration.LuraphCompatibility == true and type(Return) == 'function') then
+                if not (Session.Configuration.FilterInstanceIndex == true and typeof(Return) == 'Instance') then
+                    task.spawn(function()
+                        Session.Log(LogFormatter.Index(Self, Index, {Return}))
+                    end)
+                end
+            end
+            if type(Return) == 'function' and not checkcaller() then
+                return Calligraph.NewMethodProxy(Session, LogFormatter, Index, Self, Return)
+            elseif typeof(Return) == 'RBXScriptSignal' then
+                shared.RBXScriptSignalLookupTable[Return] = Self
+            end
+
+            return Return
+        end)
+        shared.DirectCall.__newindex = HookMgr.RegisterHook(`Calligraph:{Session.GUID}:__newindex`, HookMgr.GameMT.__newindex, function(
+            Old,
+            ...
+        )
+            if checkcaller() then
+                return Old(...)
+            end
+
+            local CallSource = DebugInfo(4, 's')
+
+            if not table.find(Session.Targets, CallSource) then
+                return Old(...)
+            end
+
+            local IsValid, Message = SafetyNet.ValidateMetamethodCall('__newindex', 'Instance', 
+...)
+
+            if not IsValid then
+                task.spawn(Session.Log, string.format('[!!!] SafetyNet triggered! [__newindex] %s', Message))
+
+                return Old(...)
+            end
+
+            local Self, Index, Value = ...
+
+            task.spawn(function()
+                Session.Log(LogFormatter.NewIndex(Self, Index, Value))
+            end)
+
+            return Old(Self, Index, Value)
+        end)
+        shared.DirectCall.__namecall = HookMgr.RegisterHook(`Calligraph:{Session.GUID}:__namecall`, HookMgr.GameMT.__namecall, function(
+            Old,
+            ...
+        )
+            if checkcaller() then
+                return Old(...)
+            end
+
+            local CallSource = DebugInfo(4, 's')
+
+            if not table.find(Session.Targets, CallSource) then
+                return Old(...)
+            end
+
+            local IsValid, Message = SafetyNet.ValidateMetamethodCall('__namecall', 'Instance', 
+...)
+
+            if not IsValid then
+                task.spawn(Session.Log, string.format('[!!!] SafetyNet triggered! [__namecall] %s', Message))
+
+                return Old(...)
+            end
+
+            local Args = {...}
+            local Self = table.remove(Args, 1)::Instance
+            local Method = getnamecallmethod()
+            local Return = {
+                Old(...),
+            }
+
+            task.spawn(function()
+                Session.Log(LogFormatter.Namecall(Self, Method, Args, Return))
+            end)
+
+            return table.unpack(Return)
+        end)
+    end
+    if Session.Configuration.LogRBXScriptSignals then
+        local RBXScriptSignalMetatable = getrawmetatable(workspace.ChildAdded)
+        local ConnectionKeys = {
+            ['Connect'] = true,
+            ['connect'] = true,
+            ['ConnectParallel'] = true,
+            ['Once'] = true,
+        }
+
+        shared.DirectCall['RBXScriptSignal.__index'] = HookMgr.RegisterHook(`Calligraph:{Session.GUID}:RBXScriptSignal.__index`, RBXScriptSignalMetatable.__index, function(
+            Old,
+            ...
+        )
+            if checkcaller() then
+                return Old(...)
+            end
+
+            local CallSource = DebugInfo(4, 's')
+
+            if not table.find(Session.Targets, CallSource) then
+                return Old(...)
+            end
+
+            local IsValid, Message = SafetyNet.ValidateMetamethodCall('__index', 'RBXScriptSignal', 
+...)
+
+            if not IsValid then
+                task.spawn(Session.Log, string.format('[!!!] SafetyNet triggered! [__index] %s', Message))
+
+                return Old(...)
+            end
+
+            local Self, Index = ...
+
+            if ConnectionKeys[Index] then
+                local ConnectionFunction = Old(...)
+
+                if shared.ProxyLookup[ConnectionFunction] then
+                    return shared.ProxyLookup[ConnectionFunction]
+                end
+
+                return Calligraph.NewMethodProxy(Session, LogFormatter, Index, {
+                    Instance = shared.RBXScriptSignalLookupTable[Self],
+                    RBXScriptSignal = Self,
+                }, ConnectionFunction)
+            end
+        end)
+    end
     if Session.Configuration.LogMetamethodFunctionFetches then
         shared.DirectCall.DebugInfo = HookMgr.RegisterHook(`Calligraph:{Session.GUID}:MetamethodFunctionFetch`, getrenv().debug.info, function(
             Old,
@@ -1219,117 +1781,18 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
                     return Old(...)
                 end
 
-                local ModifiedArgs = {}
-
                 for i = 1, ReturnN do
                     local Value = Return[i]
 
-                    ModifiedArgs[i] = Value
-
                     if typeof(Value) == 'function' and iscclosure(Value) and GameMetamethods[Value] then
-                        task.spawn(Session.Log, string.format('[!!!] Raw %s function fetched: %s', GameMetamethods[Value], tostring(Value)))
-
-                        if Session.Configuration.MetaMethodFunctionFetchTrap then
-                            ModifiedArgs[i] = newcclosure(function()
-                                print(string.format(
-[[[Calligraph] Metamethod trap triggered! Method: %s, Traceback: %s]], GameMetamethods[Value], debug.traceback()))
-                                task.spawn(Session.Log, string.format('[!!!] Metamethod trap triggered! Method: %s, Traceback: %s', GameMetamethods[Value], debug.traceback()))
-
-                                return coroutine.yield()
-                            end)
-                        end
+                        task.spawn(Session.Log, string.format('[!!!] Raw %s function fetched: %s', GameMetamethods[Value].Name, tostring(Value)))
                     end
                 end
-
-                return table.unpack(ModifiedArgs, 1, ReturnN)
             end
 
             return Old(...)
         end)
         DebugInfo = shared.DirectCall.DebugInfo.Original
-    end
-    if Session.Configuration.LogMetamethods then
-        shared.DirectCall.__index = HookMgr.RegisterHook(`Calligraph:{Session.GUID}:__index`, HookMgr.GameMT.__index, function(
-            Old,
-            Self,
-            Index
-        )
-            if checkcaller() then
-                return Old(Self, Index)
-            end
-
-            local CallSource = DebugInfo(4, 's')
-
-            if not table.find(Session.Targets, CallSource) then
-                return Old(Self, Index)
-            end
-
-            local Return = Old(Self, Index)
-
-            if not (Session.Configuration.LuraphCompatibility == true and type(Return) == 'function') then
-                if not (Session.Configuration.FilterInstanceIndex == true and typeof(Return) == 'Instance') then
-                    task.spawn(function()
-                        Session.Log(LogFormatter.Index(Self, Index, {Return}))
-                    end)
-                end
-            end
-            if type(Return) == 'function' and not checkcaller() then
-                return Calligraph.NewMethodProxy(Session, LogFormatter, Index, Self, Return)
-            elseif typeof(Return) == 'RBXScriptSignal' then
-                return Calligraph.NewRBXScriptSignalProxy(Session, LogFormatter, Self, Return)
-            end
-
-            return Return
-        end)
-        shared.DirectCall.__newindex = HookMgr.RegisterHook(`Calligraph:{Session.GUID}:__newindex`, HookMgr.GameMT.__newindex, function(
-            Old,
-            Self,
-            Index,
-            Value
-        )
-            if checkcaller() then
-                return Old(Self, Index, Value)
-            end
-
-            local CallSource = DebugInfo(4, 's')
-
-            if not table.find(Session.Targets, CallSource) then
-                return Old(Self, Index, Value)
-            end
-
-            task.spawn(function()
-                Session.Log(LogFormatter.NewIndex(Self, Index, Value))
-            end)
-
-            return Old(Self, Index, Value)
-        end)
-        shared.DirectCall.__namecall = HookMgr.RegisterHook(`Calligraph:{Session.GUID}:__namecall`, HookMgr.GameMT.__namecall, function(
-            Old,
-            Self,
-            ...
-        )
-            if checkcaller() then
-                return Old(Self, ...)
-            end
-
-            local CallSource = DebugInfo(4, 's')
-
-            if not table.find(Session.Targets, CallSource) then
-                return Old(Self, ...)
-            end
-
-            local Args = {...}
-            local Method = getnamecallmethod()
-            local Return = {
-                Old(Self, ...),
-            }
-
-            task.spawn(function()
-                Session.Log(LogFormatter.Namecall(Self, Method, Args, Return))
-            end)
-
-            return table.unpack(Return)
-        end)
     end
     if Session.Configuration.LogEnvironment and getrenv then
         local Whitelist = {

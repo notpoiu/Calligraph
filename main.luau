@@ -6,6 +6,7 @@
 --!strict
 
 shared.DirectCall = {}
+shared.ProxyLookup = {}
 
 --#region Definitions
 
@@ -18,30 +19,32 @@ local MAX_BUFFER_SIZE = 1024 * 1024 * 1024 -- 1 GiB
 type SessionConfiguration = {
 	LogEnvironment         : boolean,  -- Hook all functions in standard script Environment?
 	LogMetamethods         : boolean,  -- Hook metamethods?
-	LogAsCode              : boolean?, -- Log as executable Luau code instead of JSON? (Defaults to true)
+	LogRBXScriptSignals  : boolean?, -- Hook RBXScriptSignal methods? (Defaults to true)
 	LuraphCompatibility    : boolean?, -- Enable Luraph compatibility mode? (Defaults to false)
 	FilterInstanceIndex    : boolean?, -- Filter out instance index calls? (Defaults to false)
 	PrettyPrint            : boolean?, -- Enable pretty printing of logs? (Defaults to true)
 	ShowDebugIdForNilInstancesInsteadOfName : boolean?, -- Show DebugId for nil instances instead of their name? (Defaults to true)
 	LogMetamethodFunctionFetches : boolean?, -- Log metamethod function fetches? (Defaults to true)
-	MetaMethodFunctionFetchTrap : boolean?, -- Replace metamethod function fetches with traps? (Defaults to true)
+	SafetyNet : boolean?, -- Filter out improper method calls? (Defaults to true) (TURNING THIS OFF WILL LEAD TO DETECTIONS)
+	EmbedFunctionsAsCode : boolean?, -- Embed functions as code? (Defaults to false)
 }
 
 local DefaultSessionConfiguration: SessionConfiguration = {
 	LogEnvironment = true,
 	LogMetamethods = true,
-	LogAsCode = true,
+	LogRBXScriptSignals = true,
 	LuraphCompatibility = false,
 	FilterInstanceIndex = false,
 	PrettyPrint = true,
 	ShowDebugIdForNilInstancesInsteadOfName = true,
 	LogMetamethodFunctionFetches = true,
-	MetaMethodFunctionFetchTrap = true,
+	EmbedFunctionsAsCode = false,
+	SafetyNet = true
 }
 
 type LogConstructorSet = {
 	FunctionCall           : (Function: (...any?) -> ...any?, Args: { any? }, Return: { any? }, FunctionPath: string?) -> string,
-	Namecall               : (Instance: Instance, Method: string, Args: { any? }, Return: { any? }) -> string,
+	Namecall               : (Instance: Instance | {Instance: Instance, RBXScriptSignal: RBXScriptSignal}, Method: string, Args: { any? }, Return: { any? }) -> string,
 	Index                  : (Instance: Instance, Key: string, Return: { any? }) -> string,
 	NewIndex               : (Instance: Instance, Key: string, Value: any) -> string,
 }
@@ -65,12 +68,13 @@ type Session = {
 --#region Imports
 
 local HttpService = game:GetService("HttpService")
-local LuaEncodeAndEvaluateInstancePath = require("./modules/LuaEncode.luau")
-local LuaEncodeCore, EvaluateInstancePath =
-	LuaEncodeAndEvaluateInstancePath.LuaEncode, LuaEncodeAndEvaluateInstancePath.EvaluateInstancePath
+
 -- this is so bad but wtv i just need it to work
 local HookMgr = require("./modules/HookMgr.luau")
 local Utils = require("./modules/Utils.luau")
+local DataToCode = require("./modules/DataToCode.luau")
+local EvaluateInstancePath = require("./modules/EvaluateInstancePath.luau")
+local SafetyNet = require("./modules/SafetyNet.luau")
 
 local DebugInfo = getrenv and getrenv().debug.info or debug.info
 
@@ -85,11 +89,9 @@ end
 local LuaEncode = function(x)
 	local OldThreadContext = getthreadcontext()
 	setthreadcontext(8)
-	local Result = LuaEncodeCore(
+	local Result = DataToCode.Convert(
 		x,
-		{
-			Prettify = #x > 1 and shared.Prettify
-		}
+		#x > 1 and shared.Prettify
 	)
 	setthreadcontext(OldThreadContext)
 	return Result
@@ -100,48 +102,7 @@ end
 --#region Module
 
 local Calligraph = {
-	Version = "1.5.4",
-}
-
--- Log Constructors for the JSON format
-local JSONLogConstructors: LogConstructorSet = {
-	FunctionCall = function(Function, Args, Return, FunctionPath)
-		return JSONEncode({
-			Time = os.clock(),
-			Type = "FunctionCall",
-			Name = FunctionPath or DebugInfo(Function, "n") or tostring(Function),
-			Args = LuaEncode(Args),
-			Return = LuaEncode(Return),
-		})
-	end,
-	Namecall = function(Instance, Method, Args, Return)
-		return JSONEncode({
-			Time = os.clock(),
-			Type = "Namecall",
-			Instance = Instance:GetFullName(),
-			Method = Method,
-			Args = LuaEncode(Args),
-			Return = LuaEncode(Return),
-		})
-	end,
-	Index = function(Instance, Key, Return)
-		return JSONEncode({
-			Time = os.clock(),
-			Type = "Index",
-			Instance = Instance:GetFullName(),
-			Key = Key,
-			Return = LuaEncode(Return),
-		})
-	end,
-	NewIndex = function(Instance, Key, Value)
-		return JSONEncode({
-			Time = os.clock(),
-			Type = "NewIndex",
-			Instance = Instance:GetFullName(),
-			Key = Key,
-			Value = LuaEncode({ Value }),
-		})
-	end,
+	Version = "1.5.5",
 }
 
 local function FormatCodeArgs(Args: { any? }): string
@@ -187,29 +148,36 @@ local CodeLogConstructors: LogConstructorSet = {
 		return string.format("%s(%s) --> %s", FunctionName, FormatCodeArgs(Args), LuaEncode(Return))
 	end,
 	Namecall = function(Instance, Method, Args, Return)
-		local CallArgs = {}
 
-		for i, v in ipairs(Args) do -- ipairs to filter out the n=... value
-			-- if i > 1 then -- skip self as it's already inferred to be a namecall
-			table.insert(CallArgs, v)
-			-- end
+		if typeof(Instance) == 'table' then
+			-- The Instance is a custom call for RBXScriptSignals
+			if typeof(Instance.RBXScriptSignal) == "RBXScriptSignal" then
+				return string.format(
+					-- game.RunService.RenderStepped:Connect(function() end)
+					"%s.%s:%s(%s)",
+					FormatInstancePath(Instance.Instance),
+					tostring(Instance.RBXScriptSignal):gsub("Signal ", ""),
+					Method,
+					FormatCodeArgs(Args)
+				)
+			end
 		end
+
+		assert(typeof(Instance) == 'Instance') -- Make linter happy
 
 		return string.format(
 			"%s:%s(%s) --> %s",
 			FormatInstancePath(Instance),
 			Method,
-			FormatCodeArgs(CallArgs),
+			FormatCodeArgs(Args),
 			LuaEncode(Return)
 		)
 	end,
 	Index = function(Instance, Key, Return)
-
-		-- Check if Return is a RbxScriptSignal
+		-- Check if Return is a RBXScriptSignal
 		if typeof(Return[1]) == "RBXScriptSignal" then
 			return string.format("%s.%s --> <RBXScriptSignal %s>", FormatInstancePath(Instance), Key, Key)
 		end
-
 		return string.format("%s.%s --> %s", FormatInstancePath(Instance), Key, LuaEncode(Return))
 	end,
 	NewIndex = function(Instance, Key, Value)
@@ -221,10 +189,15 @@ function Calligraph.NewMethodProxy(
 	Session: Session,
 	Formatter: LogConstructorSet,
 	Method: string,
-	Instance: Instance,
+	Instance: Instance | {Instance: Instance, RBXScriptSignal: RBXScriptSignal},
 	OldMethod: (...any?) -> ...any?
 )
-	return newcclosure(function(...)
+
+	if shared.ProxyLookup[OldMethod] then
+		return shared.ProxyLookup[OldMethod]
+	end
+
+	shared.ProxyLookup[OldMethod] = newcclosure(function(...)
 		if checkcaller() then
 			return OldMethod(...)
 		end
@@ -241,89 +214,11 @@ function Calligraph.NewMethodProxy(
 		if Success then
 			return table.unpack(Return, 1, ArgsN)
 		else
-			return error(Return[1])
+			return OldMethod(...)
 		end
 	end)
-end
 
-function Calligraph.NewRBXScriptSignalProxy(
-	Session: Session,
-	Formatter: LogConstructorSet,
-	Instance: Instance,
-	Signal: RBXScriptSignal
-)
-	local Proxy = {
-		Connect = newcclosure(function(self, Callback: (...any?) -> ...any?)
-			if checkcaller() then
-				return Signal:Connect(Callback)
-			end
-			task.spawn(function()
-				local SignalPath = FormatInstancePath(Instance) .. "." .. tostring(Signal):gsub("Signal ", "")
-				Session.Log(
-					string.format("%s:Connect(%s)", SignalPath, FormatCodeArgs({ Callback }))
-				)
-			end)
-			return Signal:Connect(Callback)
-		end),
-		ConnectParallel = newcclosure(function(self, Callback: (...any?) -> ...any?)
-			if checkcaller() then
-				return Signal:Connect(Callback)
-			end
-			task.spawn(function()
-				local SignalPath = FormatInstancePath(Instance) .. "." .. tostring(Signal):gsub("Signal ", "")
-				Session.Log(
-					string.format("%s:Connect(%s)", SignalPath, FormatCodeArgs({ Callback }))
-				)
-			end)
-			return Signal:Connect(Callback)
-		end),
-		Once = newcclosure(function(self, Callback: (...any?) -> ...any?)
-			if checkcaller() then
-				return Signal:Once(Callback)
-			end
-			task.spawn(function()
-				local SignalPath = FormatInstancePath(Instance) .. "." .. tostring(Signal):gsub("Signal ", "")
-				Session.Log(
-					string.format("%s:Once(%s)", SignalPath, FormatCodeArgs({ Callback }))
-				)
-			end)
-			return Signal:Once(Callback)
-		end),
-		Wait = newcclosure(function(self)
-			if checkcaller() then
-				return Signal:Wait()
-			end
-			task.spawn(function()
-				local SignalPath = FormatInstancePath(Instance) .. "." .. tostring(Signal):gsub("Signal ", "")
-				Session.Log(
-					string.format("%s:Wait()", SignalPath)
-				)
-			end)
-			return Signal:Wait()
-		end)
-	}
-
-	local SignalMetatable = {
-		__index = function(self, key)
-			return rawget(Signal, key)
-		end,
-		__tostring = function()
-			return tostring(Signal)
-		end,
-		__type = function()
-			return "RBXScriptSignal"
-		end,
-		__eq = function(self, other)
-			if other == Signal then
-				return true
-			end
-			return false
-		end
-	}
-
-	setmetatable(Proxy, SignalMetatable)
-
-	return Proxy
+	return shared.ProxyLookup[OldMethod]
 end
 
 -- i hate this
@@ -333,7 +228,12 @@ function Calligraph.NewFunctionProxy(
 	Function: (...any?) -> ...any?,
 	FunctionPath: string?
 )
-	return function(Old, ...)
+
+	if shared.ProxyLookup[Function] then
+		return shared.ProxyLookup[Function]
+	end
+
+	shared.ProxyLookup[Function] = function(Old, ...)
 		if checkcaller() then
 			return Old(...)
 		end
@@ -359,6 +259,8 @@ function Calligraph.NewFunctionProxy(
 			return error(Return[1])
 		end
 	end
+
+	return shared.ProxyLookup[Function]
 end
 
 function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfiguration)
@@ -372,17 +274,17 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 
 	shared.Prettify = (Configuration.PrettyPrint == true)
 	shared.UseDebugId = (Configuration.ShowDebugIdForNilInstancesInsteadOfName == true)
+	shared.EmbedFunctionsAsCode = (Configuration.EmbedFunctionsAsCode == true)
 
 	local Session: Session
-	local LogFormatter: LogConstructorSet = (Configuration.LogAsCode == true) and CodeLogConstructors
-		or JSONLogConstructors
+	local LogFormatter: LogConstructorSet = CodeLogConstructors
 	local LastLogContent: string = ""
 	local RepeatCount: number = 0
 
 	local GameMetamethods = {
-		[HookMgr.GameMT.__index] = "__index",
-		[HookMgr.GameMT.__newindex] = "__newindex",
-		[HookMgr.GameMT.__namecall] = "__namecall"
+		[HookMgr.GameMT.__index] = {Name = "__index", ExpectedArguments = 2},
+		[HookMgr.GameMT.__newindex] = {Name = "__newindex", ExpectedArguments = 3},
+		[HookMgr.GameMT.__namecall] = {Name = "__namecall", ExpectedArguments = math.huge}
 	}
 
 	local function WriteToBuffer(FormattedLog: string)
@@ -438,6 +340,9 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 				return
 			end
 			
+			local OldThreadContext = getthreadcontext()
+			setthreadcontext(8)
+
 			local IsSystemMessage = string.match(LogString, "^%[SYSTEM%]") or 
 									string.match(LogString, "^Calligraph v") or
 									string.match(LogString, "^Session") or
@@ -459,6 +364,9 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 				LastLogContent = LogString
 				RepeatCount = 1
 			end
+
+			setthreadcontext(OldThreadContext)
+
 		end,
 		SaveToFile = function(self: Session, FileName: string)
 			FlushRepeatedLog()
@@ -492,8 +400,169 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 	Session.Log("Session GUID: " .. Session.GUID)
 	Session.Log("Configuration: " .. JSONEncode(Session.Configuration))
 	Session.Log("Targets: " .. table.concat(Session.Targets, ", "))
-	Session.Log(`Log format: {Session.Configuration.LogAsCode and "Luau Code" or "JSON"}`)
+	Session.Log(`Log format: Luau Code`)
 	Session.Log("[SYSTEM] Calligraph is now active. All logs will be recorded.")
+
+	if Session.Configuration.LogMetamethods then
+		shared.DirectCall.__index = HookMgr.RegisterHook(
+			`Calligraph:{Session.GUID}:__index`,
+			HookMgr.GameMT.__index,
+			function(Old, ...)
+				if checkcaller() then
+					return Old(...)
+				end
+
+				local CallSource = DebugInfo(4, "s")
+
+				if not table.find(Session.Targets, CallSource) then
+					return Old(...)
+				end
+
+				local IsValid, Message = SafetyNet.ValidateMetamethodCall("__index", "Instance", ...)
+
+				if not IsValid then
+					task.spawn(Session.Log, string.format("[!!!] SafetyNet triggered! [__index] %s", Message))
+					return Old(...)
+				end
+
+				-- Now that we have validated the call, we can trust the arguments.
+				local Self, Index = ...
+
+				local Return = Old(Self, Index)
+
+				if not (Session.Configuration.LuraphCompatibility == true and type(Return) == "function") then
+					if not (Session.Configuration.FilterInstanceIndex == true and typeof(Return) == "Instance") then
+						task.spawn(function()
+							Session.Log(LogFormatter.Index(Self, Index, { Return }))
+						end)
+					end
+				end
+
+				if type(Return) == "function" and not checkcaller() then
+					return Calligraph.NewMethodProxy(Session, LogFormatter, Index, Self, Return)
+				elseif typeof(Return) == "RBXScriptSignal" then
+					shared.RBXScriptSignalLookupTable[Return] = Self
+				end
+
+				return Return
+			end
+		)
+
+		shared.DirectCall.__newindex = HookMgr.RegisterHook(
+			`Calligraph:{Session.GUID}:__newindex`,
+			HookMgr.GameMT.__newindex,
+			function(Old, ...)
+				if checkcaller() then
+					return Old(...)
+				end
+
+				local CallSource = DebugInfo(4, "s")
+
+				if not table.find(Session.Targets, CallSource) then
+					return Old(...)
+				end
+
+				local IsValid, Message = SafetyNet.ValidateMetamethodCall("__newindex", "Instance", ...)
+
+				if not IsValid then
+					task.spawn(Session.Log, string.format("[!!!] SafetyNet triggered! [__newindex] %s", Message))
+					return Old(...)
+				end
+
+				-- Now that we have validated the call, we can trust the arguments.
+				local Self, Index, Value = ...
+
+				task.spawn(function()
+					Session.Log(LogFormatter.NewIndex(Self, Index, Value))
+				end)
+
+				return Old(Self, Index, Value)
+			end
+		)
+
+		shared.DirectCall.__namecall = HookMgr.RegisterHook(
+			`Calligraph:{Session.GUID}:__namecall`,
+			HookMgr.GameMT.__namecall,
+			function(Old, ...)
+				if checkcaller() then
+					return Old(...)
+				end
+
+				local CallSource = DebugInfo(4, "s")
+
+				if not table.find(Session.Targets, CallSource) then
+					return Old(...)
+				end
+
+				local IsValid, Message = SafetyNet.ValidateMetamethodCall("__namecall", "Instance", ...)
+
+				if not IsValid then
+					task.spawn(Session.Log, string.format("[!!!] SafetyNet triggered! [__namecall] %s", Message))
+					return Old(...)
+				end
+
+				local Args = {...}
+				local Self = table.remove(Args, 1) :: Instance
+				local Method = getnamecallmethod()
+				local Return = { Old(...) }
+
+				task.spawn(function()
+					Session.Log(LogFormatter.Namecall(Self, Method, Args, Return))
+				end)
+
+				return table.unpack(Return)
+			end
+		)
+	end
+
+	if Session.Configuration.LogRBXScriptSignals then
+
+		local RBXScriptSignalMetatable = getrawmetatable(workspace.ChildAdded)
+
+		local ConnectionKeys = {
+			["Connect"] = true,
+			["connect"] = true,
+			["ConnectParallel"] = true,
+			["Once"] = true,
+		}
+
+		shared.DirectCall['RBXScriptSignal.__index'] = HookMgr.RegisterHook(
+			`Calligraph:{Session.GUID}:RBXScriptSignal.__index`,
+			RBXScriptSignalMetatable.__index,
+			function(Old, ...)
+				if checkcaller() then
+					return Old(...)
+				end
+
+				local CallSource = DebugInfo(4, "s")
+
+				if not table.find(Session.Targets, CallSource) then
+					return Old(...)
+				end
+
+				local IsValid, Message = SafetyNet.ValidateMetamethodCall("__index", "RBXScriptSignal", ...)
+
+				if not IsValid then
+					task.spawn(Session.Log, string.format("[!!!] SafetyNet triggered! [__index] %s", Message))
+					return Old(...)
+				end
+
+				local Self, Index = ...
+
+				if ConnectionKeys[Index] then
+					
+					local ConnectionFunction = Old(...)
+					
+					-- This is a connection function, we want to log all calls to it.
+					if shared.ProxyLookup[ConnectionFunction] then
+						return shared.ProxyLookup[ConnectionFunction]
+					end
+
+					return Calligraph.NewMethodProxy(Session, LogFormatter, Index, {Instance = shared.RBXScriptSignalLookupTable[Self], RBXScriptSignal = Self}, ConnectionFunction)
+				end
+			end
+		)
+	end
 
 	if Session.Configuration.LogMetamethodFunctionFetches then
 		shared.DirectCall.DebugInfo = HookMgr.RegisterHook(`Calligraph:{Session.GUID}:MetamethodFunctionFetch`, getrenv().debug.info, function(Old, ...)
@@ -535,124 +604,29 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 				if not Success then
 					return Old(...)
 				end
-
-				local ModifiedArgs = {}
 				
 				for i = 1, ReturnN do
 					local Value = Return[i]
-					ModifiedArgs[i] = Value
 
 					-- print('[dbg] Checking if debug.info return value is a metamethod', Value)
 
+					-- doesnt do anything in this context
 					if 
 						typeof(Value) == "function" and
 						iscclosure(Value) and
 						GameMetamethods[Value]
 					then
 						-- print('[dbg] Found metamethod function:', Value)
-						task.spawn(Session.Log, string.format("[!!!] Raw %s function fetched: %s", GameMetamethods[Value], tostring(Value)))
-						if Session.Configuration.MetaMethodFunctionFetchTrap then
-							-- print('[dbg] Returning trap instead of metamethod function')
-							ModifiedArgs[i] = newcclosure(function()
-								print(string.format('[Calligraph] Metamethod trap triggered! Method: %s, Traceback: %s', GameMetamethods[Value], debug.traceback()))
-								task.spawn(Session.Log, string.format("[!!!] Metamethod trap triggered! Method: %s, Traceback: %s", GameMetamethods[Value], debug.traceback()))
-								return coroutine.yield()
-							end)
-						end
+						task.spawn(Session.Log, string.format("[!!!] Raw %s function fetched: %s", GameMetamethods[Value].Name, tostring(Value)))
 					end
 				end
-
-				return table.unpack(ModifiedArgs, 1, ReturnN)
+				
 			end
 			
 			return Old(...) -- doublecall but whatever i cant be assed to recreate the errors
 		end)
 
 		DebugInfo = shared.DirectCall.DebugInfo.Original
-	end
-
-	if Session.Configuration.LogMetamethods then
-		shared.DirectCall.__index = HookMgr.RegisterHook(
-			`Calligraph:{Session.GUID}:__index`,
-			HookMgr.GameMT.__index,
-			function(Old, Self, Index)
-				if checkcaller() then
-					return Old(Self, Index)
-				end
-
-				local CallSource = DebugInfo(4, "s")
-
-				if not table.find(Session.Targets, CallSource) then
-					return Old(Self, Index)
-				end
-
-				local Return = Old(Self, Index)
-
-				if not (Session.Configuration.LuraphCompatibility == true and type(Return) == "function") then
-					if not (Session.Configuration.FilterInstanceIndex == true and typeof(Return) == "Instance") then
-						task.spawn(function()
-							Session.Log(LogFormatter.Index(Self, Index, { Return }))
-						end)
-					end
-				end
-
-				if type(Return) == "function" and not checkcaller() then
-					return Calligraph.NewMethodProxy(Session, LogFormatter, Index, Self, Return)
-				elseif typeof(Return) == "RBXScriptSignal" then
-					return Calligraph.NewRBXScriptSignalProxy(Session, LogFormatter, Self, Return)
-				end
-
-				return Return
-			end
-		)
-
-		shared.DirectCall.__newindex = HookMgr.RegisterHook(
-			`Calligraph:{Session.GUID}:__newindex`,
-			HookMgr.GameMT.__newindex,
-			function(Old, Self, Index, Value)
-				if checkcaller() then
-					return Old(Self, Index, Value)
-				end
-
-				local CallSource = DebugInfo(4, "s")
-
-				if not table.find(Session.Targets, CallSource) then
-					return Old(Self, Index, Value)
-				end
-
-				task.spawn(function()
-					Session.Log(LogFormatter.NewIndex(Self, Index, Value))
-				end)
-
-				return Old(Self, Index, Value)
-			end
-		)
-
-		shared.DirectCall.__namecall = HookMgr.RegisterHook(
-			`Calligraph:{Session.GUID}:__namecall`,
-			HookMgr.GameMT.__namecall,
-			function(Old, Self, ...)
-				if checkcaller() then
-					return Old(Self, ...)
-				end
-
-				local CallSource = DebugInfo(4, "s")
-
-				if not table.find(Session.Targets, CallSource) then
-					return Old(Self, ...)
-				end
-
-				local Args = { ... }
-				local Method = getnamecallmethod()
-				local Return = { Old(Self, ...) }
-
-				task.spawn(function()
-					Session.Log(LogFormatter.Namecall(Self, Method, Args, Return))
-				end)
-
-				return table.unpack(Return)
-			end
-		)
 	end
 
 	if Session.Configuration.LogEnvironment and getrenv then
@@ -664,6 +638,7 @@ function Calligraph:NewSession(Targets: { string }, Configuration: SessionConfig
 			["tostring"] = true, -- Luraph spams this but is useful sometimes
 			["tonumber"] = true,
 			["typeof"] = true,
+			-- ["type"] = true,
 			["tick"] = true,
 			-- Tables prefixed with t_ will have all their functions hooked
 			-- ["t_CFrame"] = true,
