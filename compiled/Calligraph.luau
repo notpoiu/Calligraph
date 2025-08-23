@@ -556,10 +556,7 @@ do
                 _,
                 InComment: boolean?
             )
-                local CommentSeperator = if not InComment then''else'='
-                local SignalName = tostring(Signal):match('Signal ([A-z]+)')
-
-                return Signals[SignalName] or '(nil --[' .. CommentSeperator .. '[ RBXScriptSignal | ' .. SignalName .. ' is not supported ]' .. CommentSeperator .. '])'
+                return string.format('<%s>', tostring(Signal))
             end
 
             Class.Signals = Signals
@@ -1244,6 +1241,7 @@ end
 
 shared.DirectCall = {}
 shared.ProxyLookup = {}
+shared.RBXScriptSignalLookupTable = {}
 
 local MAX_BUFFER_SIZE = 1024 * 1024 * 1024
 
@@ -1262,7 +1260,7 @@ local DefaultSessionConfiguration: SessionConfiguration = {
     SafetyNet = true,
 }
 
-type LogConstructorSet = {FunctionCall: (Function:(...any?) -> ...any?, Args:{any?}, Return:{any?}, FunctionPath:string?) -> string, Namecall: (Instance:Instance | {Instance: Instance, RBXScriptSignal: RBXScriptSignal}, Method:string, Args:{any?}, Return:{any?}) -> string, Index: (Instance:Instance, Key:string, Return:{any?}) -> string, NewIndex: (Instance:Instance, Key:string, Value:any) -> string}
+type LogConstructorSet = {FunctionCall: (Function:(...any?) -> ...any?, Args:{any?}, Return:{any?}, FunctionPath:string?) -> string, Namecall: (Instance:Instance | {Instance: Instance, RBXScriptSignal: RBXScriptSignal}, Method:string, Args:{any?}, Return:{n: number | any}) -> string, Index: (Instance:Instance, Key:string, Return:{any?}) -> string, NewIndex: (Instance:Instance, Key:string, Value:any) -> string}
 type Session = {Configuration: SessionConfiguration, Targets: {string}, Data: buffer, Written: number, Start: number, End: number, Close: () -> (), GUID: string, Log: (LogString:string) -> (), Active: boolean, SaveToFile: (self:Session, FileName:string) -> ()}
 
 local HttpService = game:GetService('HttpService')
@@ -1334,7 +1332,7 @@ local CodeLogConstructors: LogConstructorSet = {
     FunctionCall = function(Function, Args, Return, FunctionPath)
         local FunctionName = FunctionPath or DebugInfo(Function, 'n') or `<Anonymous {tostring(Function)}>`
 
-        return string.format('%s(%s) --> %s', FunctionName, FormatCodeArgs(Args), LuaEncode(Return))
+        return string.format('%s(%s) --> %s', FunctionName, FormatCodeArgs(Args), FormatCodeArgs(Return))
     end,
     Namecall = function(Instance, Method, Args, Return)
         if typeof(Instance) == 'table' then
@@ -1345,14 +1343,26 @@ local CodeLogConstructors: LogConstructorSet = {
 
         assert(typeof(Instance) == 'Instance')
 
-        return string.format('%s:%s(%s) --> %s', FormatInstancePath(Instance), Method, FormatCodeArgs(Args), LuaEncode(Return))
+        if Return.n and Return.n == 0 then
+            if rawget(Return, 'n') then
+                rawset(Return, 'n', nil)
+            end
+
+            return string.format('%s:%s(%s)', FormatInstancePath(Instance), Method, FormatCodeArgs(Args))
+        else
+            if rawget(Return, 'n') then
+                rawset(Return, 'n', nil)
+            end
+
+            return string.format('%s:%s(%s) --> %s', FormatInstancePath(Instance), Method, FormatCodeArgs(Args), FormatCodeArgs(Return))
+        end
     end,
     Index = function(Instance, Key, Return)
         if typeof(Return[1]) == 'RBXScriptSignal' then
             return string.format('%s.%s --> <RBXScriptSignal %s>', FormatInstancePath(Instance), Key, Key)
         end
 
-        return string.format('%s.%s --> %s', FormatInstancePath(Instance), Key, LuaEncode(Return))
+        return string.format('%s.%s --> %s', FormatInstancePath(Instance), Key, FormatCodeArgs(Return))
     end,
     NewIndex = function(Instance, Key, Value)
         return string.format('%s.%s = %s', FormatInstancePath(Instance), Key, Value and FormatCodeArgs({Value}) or 'nil')
@@ -1375,18 +1385,31 @@ function Calligraph.NewMethodProxy(
             return OldMethod(...)
         end
 
+        local IsValid, Message = SafetyNet.ValidateMetamethodCall('__namecall', typeof(Instance) == 'Instance' and 'Instance' or 'RBXScriptSignal', 
+...)
+
+        if not IsValid then
+            task.spawn(Session.Log, string.format('[!!!] SafetyNet triggered! [__namecall (proxy)] %s', Message))
+
+            return OldMethod(...)
+        end
+
         local Args = {...}
         local Success, Return, ArgsN = Utils.GetReturnData(OldMethod, ...)
         local ReturnFormatted = Success and Return or {
             ['error'] = Return[1],
         }
+        local Self = table.remove(Args, 1)
 
-        table.remove(Args, 1)
         task.spawn(function()
             Session.Log(Formatter.Namecall(Instance, Method, Args, ReturnFormatted))
         end)
 
         if Success then
+            if typeof(Args[1]) == 'RBXScriptSignal' then
+                shared.RBXScriptSignalLookupTable[Args[1] ] = Self
+            end
+
             return table.unpack(Return, 1, ArgsN)
         else
             return OldMethod(...)
@@ -1627,7 +1650,12 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
             end
 
             local Self, Index = ...
-            local Return = Old(Self, Index)
+
+            if not pcall(Old, ...) then
+                return Old(...)
+            end
+
+            local Return = Old(...)
 
             if not (Session.Configuration.LuraphCompatibility == true and type(Return) == 'function') then
                 if not (Session.Configuration.FilterInstanceIndex == true and typeof(Return) == 'Instance') then
@@ -1639,11 +1667,7 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
             if typeof(Return) == 'function' then
                 return Calligraph.NewMethodProxy(Session, LogFormatter, Index, Self, Return)
             elseif typeof(Return) == 'RBXScriptSignal' then
-                print('dbg, hit rbxscriptsignal idx ret, logging to lookup')
-
                 shared.RBXScriptSignalLookupTable[Return] = Self
-
-                print('dbg, ckpt2')
             end
 
             return Return
@@ -1705,15 +1729,17 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
             local Args = {...}
             local Self = table.remove(Args, 1)::Instance
             local Method = getnamecallmethod()
-            local Return = {
-                Old(...),
-            }
+            local Return = table.pack(Old(...))
+
+            if getnamecallmethod() == 'GetPropertyChangedSignal' then
+                shared.RBXScriptSignalLookupTable[Return[1] ] = Self
+            end
 
             task.spawn(function()
                 Session.Log(LogFormatter.Namecall(Self, Method, Args, Return))
             end)
 
-            return table.unpack(Return)
+            return table.unpack(Return, 1, Return.n)
         end)
     end
     if Session.Configuration.LogRBXScriptSignals then
@@ -1739,8 +1765,6 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
                 return Old(...)
             end
 
-            print('dbg, scriptsignal idx', ...)
-
             local IsValid, Message = SafetyNet.ValidateMetamethodCall('__index', 'RBXScriptSignal', 
 ...)
 
@@ -1753,8 +1777,6 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
             local Self, Index = ...
 
             if ConnectionKeys[Index] then
-                print('dbg, hit connectionkey idx, returning methodproxy')
-
                 local ConnectionFunction = Old(...)
 
                 return Calligraph.NewMethodProxy(Session, LogFormatter, Index, {
@@ -1771,20 +1793,22 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
             Old,
             ...
         )
-            if checkcaller() then
-                return Old(...)
-            end
-
             local Args = table.pack(...)
 
+            if typeof(Args[1]) == 'number' then
+                Args[1] = Args[1] + 3
+            end
+            if checkcaller() then
+                return Old(table.unpack(Args, 1, Args.n))
+            end
             if Args.n ~= 2 then
-                return Old(...)
+                return Old(table.unpack(Args, 1, Args.n))
             end
             if typeof(Args[1]) == 'number' and typeof(Args[2]) == 'string' and Args[2]:match('f') then
-                local Success, Return, ReturnN = Utils.GetReturnData(Old, Args[1] + 4, Args[2])
+                local Success, Return, ReturnN = Utils.GetReturnData(Old, Args[1] + 1, Args[2])
 
                 if not Success then
-                    return Old(...)
+                    return Old(table.unpack(Args, 1, Args.n))
                 end
 
                 for i = 1, ReturnN do
@@ -1794,9 +1818,11 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
                         task.spawn(Session.Log, string.format('[!!!] Raw %s function fetched: %s', GameMetamethods[Value].Name, tostring(Value)))
                     end
                 end
+
+                return Old(table.unpack(Args, 1, Args.n))
             end
 
-            return Old(...)
+            return Old(table.unpack(Args, 1, Args.n))
         end)
         DebugInfo = shared.DirectCall.DebugInfo.Original
     end
@@ -1811,6 +1837,7 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
             ['t_os'] = true,
             ['t_math'] = true,
             ['t_task'] = true,
+            ['t_Instance'] = true,
         }
         local Blacklist = {
             ['t_task.wait'] = true,

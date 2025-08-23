@@ -447,10 +447,7 @@ do
 	}
 
 	function DefaultMethods.RBXScriptSignal(Signal : RBXScriptSignal, _, _, _, InComment : boolean?)
-		local CommentSeperator = if not InComment then "" else "="
-		local SignalName = tostring(Signal):match("Signal ([A-z]+)")
-
-		return Signals[SignalName] or "(nil --["..CommentSeperator.."[ RBXScriptSignal | "..SignalName.." is not supported ]"..CommentSeperator.."])"
+		return string.format("<%s>", tostring(Signal))
 	end
 
 	Class.Signals = Signals
