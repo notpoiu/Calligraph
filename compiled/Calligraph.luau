@@ -1636,10 +1636,14 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
                     end)
                 end
             end
-            if type(Return) == 'function' and not checkcaller() then
+            if typeof(Return) == 'function' then
                 return Calligraph.NewMethodProxy(Session, LogFormatter, Index, Self, Return)
             elseif typeof(Return) == 'RBXScriptSignal' then
+                print('dbg, hit rbxscriptsignal idx ret, logging to lookup')
+
                 shared.RBXScriptSignalLookupTable[Return] = Self
+
+                print('dbg, ckpt2')
             end
 
             return Return
@@ -1735,6 +1739,8 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
                 return Old(...)
             end
 
+            print('dbg, scriptsignal idx', ...)
+
             local IsValid, Message = SafetyNet.ValidateMetamethodCall('__index', 'RBXScriptSignal', 
 ...)
 
@@ -1747,17 +1753,17 @@ function Calligraph:NewSession(Targets: {string}, Configuration: SessionConfigur
             local Self, Index = ...
 
             if ConnectionKeys[Index] then
-                local ConnectionFunction = Old(...)
+                print('dbg, hit connectionkey idx, returning methodproxy')
 
-                if shared.ProxyLookup[ConnectionFunction] then
-                    return shared.ProxyLookup[ConnectionFunction]
-                end
+                local ConnectionFunction = Old(...)
 
                 return Calligraph.NewMethodProxy(Session, LogFormatter, Index, {
                     Instance = shared.RBXScriptSignalLookupTable[Self],
                     RBXScriptSignal = Self,
                 }, ConnectionFunction)
             end
+
+            return Old(...)
         end)
     end
     if Session.Configuration.LogMetamethodFunctionFetches then
